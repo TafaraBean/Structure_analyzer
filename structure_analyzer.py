@@ -13,9 +13,10 @@ import numpy as np
 import plotly.graph_objects as go
 import MetaTrader5 as mt5
 from sklearn.cluster import KMeans
+from scipy.stats import linregress
 import os
-import time
-from datetime import datetime
+import time  # Added time
+from datetime import datetime  # Added datetime
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -30,7 +31,7 @@ st.markdown("""
 **Logic:**
 * **Structure:** Volume-Weighted K-Means on Velocity Reversals (Snapbacks).
 * **Confluence:** Filtered by Higher Timeframe (HTF) & Fibonacci levels.
-* **Visualization:** Lines draw from the specific candle where the structure was confirmed.
+* **Trend Exhaustion:** Linear Regression Channels to detect when a trend is "leaking" (Overextended).
 """)
 
 # --- SIDEBAR: DATA CONTROLS ---
@@ -69,7 +70,6 @@ st.sidebar.markdown("---")
 live_mode = st.sidebar.checkbox("🔴 Enable Live Refresh (10s)", value=False)
 
 # Data Depth
-# UPDATED: Lowered min_value to 1 day for granular analysis
 days_to_fetch = st.sidebar.slider("Days of History", min_value=1, max_value=730, value=30)
 
 # Strategy Selector
@@ -91,6 +91,12 @@ strategies = st.sidebar.multiselect(
     ["Support Bounce (Buy)", "Resistance Reject (Sell)"],
     default=["Support Bounce (Buy)", "Resistance Reject (Sell)"]
 )
+
+# Trend Exhaustion Settings
+st.sidebar.markdown("---")
+st.sidebar.header("📉 Trend Exhaustion")
+show_exhaustion = st.sidebar.checkbox("Show Exhaustion Channels", value=False)
+exhaustion_lookback = st.sidebar.slider("Regression Lookback", 50, 300, 100, help="Window to find Max/Min pivots for the channel.")
 
 # --- HELPER FUNCTIONS ---
 
@@ -147,7 +153,6 @@ def get_market_data_visual(interval_label, days_back, use_mt5=False, mt5_creds=N
         # Fetch HTF
         df_htf = None
         htf_const = HTF_MAPPING.get(tf_const, mt5.TIMEFRAME_D1)
-        # Fetch fewer candles for HTF (same time duration)
         htf_candles = days_back * 24 if htf_const == mt5.TIMEFRAME_H1 else days_back + 50
         
         df_htf, msg_htf = get_mt5_data(
@@ -167,15 +172,12 @@ def calculate_levels_weighted_kmeans(df_slice, n_clusters):
     """
     if len(df_slice) < 20: return []
     
-    # 1. Physics: Velocity Reversals (Snapbacks)
     velocity = df_slice['close'].diff()
     reversal_mask = (velocity * velocity.shift(1)) < 0
     
-    # 2. Extract Pivot Highs/Lows
     rev_highs = df_slice.loc[reversal_mask, 'high'].values.reshape(-1, 1)
     rev_lows = df_slice.loc[reversal_mask, 'low'].values.reshape(-1, 1)
     
-    # 3. Weighting Logic
     vol_col = 'real_volume' if 'real_volume' in df_slice.columns and df_slice['real_volume'].sum() > 0 else 'tick_volume'
     vol_series = df_slice[vol_col]
     range_series = df_slice['high'] - df_slice['low']
@@ -184,7 +186,6 @@ def calculate_levels_weighted_kmeans(df_slice, n_clusters):
         if len(arr) == 0 or np.max(arr) == np.min(arr): return np.ones_like(arr)
         return (arr - np.min(arr)) / (np.max(arr) - np.min(arr)) + 0.1
 
-    # Extract weights at reversal points
     w_vol = normalize(vol_series.loc[reversal_mask].values)
     w_rng = normalize(range_series.loc[reversal_mask].values)
     combined_weights = w_vol * w_rng
@@ -218,10 +219,69 @@ def calculate_fib_levels(df_ohlc):
     }
     return levels
 
+def calculate_trend_exhaustion(df, lookback=100, std_dev_mult=2.0):
+    """
+    Calculates a regression channel between the High/Low of the period 
+    and measures how much price 'leaks' outside this channel.
+    """
+    if len(df) < lookback: return None, None, None
+    
+    # 1. Identify Pivots in the lookback window
+    window_df = df.iloc[-lookback:]
+    id_max = window_df['high'].idxmax()
+    id_min = window_df['low'].idxmin()
+    
+    # Get integer locations for regression
+    t_start = df.index.get_loc(min(id_max, id_min))
+    t_end = df.index.get_loc(max(id_max, id_min))
+    
+    # 2. Fit Regression on the Trend Segment (Pivot to Pivot)
+    # We use integer indices (0, 1, 2...) as X to project forward easily
+    if t_end - t_start < 5: return None, None, None # Too close
+    
+    trend_segment = df.iloc[t_start : t_end+1]
+    x = np.arange(t_start, t_end+1)
+    y = trend_segment['close'].values
+    
+    slope, intercept, _, _, _ = linregress(x, y)
+    
+    # Calculate Standard Deviation of Residuals for Channel Width
+    residuals = y - (slope * x + intercept)
+    std_resid = np.std(residuals)
+    channel_width = std_resid * std_dev_mult
+    
+    # 3. Project Channel Forward to Current Time
+    # Create arrays for the full lookback window + current
+    full_window_indices = np.arange(len(df) - lookback, len(df))
+    
+    mid_line = slope * full_window_indices + intercept
+    upper_line = mid_line + channel_width
+    lower_line = mid_line - channel_width
+    
+    # 4. Measure Leakage (Density outside channel)
+    # Compare actual closes in the full window to the projected lines
+    current_closes = df['close'].iloc[-lookback:].values
+    
+    is_above = current_closes > upper_line
+    is_below = current_closes < lower_line
+    is_leaking = is_above | is_below
+    
+    # Calculate Density (Exhaustion Metric)
+    # Weighted towards recent data (last 20% of window)
+    recent_n = int(lookback * 0.2)
+    leakage_score = np.mean(is_leaking[-recent_n:]) * 100
+    
+    # Pack data for plotting
+    channel_data = pd.DataFrame({
+        'mid': mid_line,
+        'upper': upper_line,
+        'lower': lower_line,
+        'is_leaking': is_leaking
+    }, index=df.index[-lookback:])
+    
+    return channel_data, leakage_score, slope
+
 def get_confluent_levels(base_levels, htf_levels, fib_levels, tolerance=0.003):
-    """
-    Identifies levels that exist in Base AND (HTF OR Fibs) within tolerance.
-    """
     confluent = []
     fib_vals = list(fib_levels.values()) if fib_levels else []
     
@@ -290,7 +350,7 @@ if st.session_state['data_loaded'] and 'viz_data' in st.session_state:
     # 2. Calculate Confluence
     htf_levels = []
     if use_confluence and df_htf is not None:
-        # FIXED: Use n_clusters variable here
+        # Use n_clusters variable here
         htf_levels = calculate_levels_weighted_kmeans(df_htf, max(3, n_clusters // 2))
         
     fib_levels = calculate_fib_levels(df) if use_fibs else {}
@@ -308,6 +368,59 @@ if st.session_state['data_loaded'] and 'viz_data' in st.session_state:
         low=df['low'], close=df['close'],
         name=mt5_symbol
     ))
+
+    # --- TREND EXHAUSTION OVERLAY ---
+    if show_exhaustion:
+        # Calculate
+        ch_data, leak_score, slope = calculate_trend_exhaustion(df, lookback=exhaustion_lookback)
+        
+        if ch_data is not None:
+            # 1. Plot Channel Bounds
+            fig.add_trace(go.Scatter(
+                x=ch_data.index, y=ch_data['upper'], 
+                mode='lines', name='Upper Channel',
+                line=dict(color='gray', width=1, dash='dash')
+            ))
+            
+            fig.add_trace(go.Scatter(
+                x=ch_data.index, y=ch_data['lower'], 
+                mode='lines', name='Lower Channel',
+                line=dict(color='gray', width=1, dash='dash')
+            ))
+            
+            # 2. Visualizing Leakage
+            mask_up = ch_data['is_leaking'] & (df['close'].iloc[-exhaustion_lookback:] > ch_data['upper'])
+            mask_down = ch_data['is_leaking'] & (df['close'].iloc[-exhaustion_lookback:] < ch_data['lower'])
+            
+            if mask_up.any():
+                fig.add_trace(go.Scatter(
+                    x=ch_data.index[mask_up], 
+                    y=df['close'].iloc[-exhaustion_lookback:][mask_up],
+                    mode='markers', name='Upside Exhaustion',
+                    marker=dict(color='rgba(255, 0, 0, 0.6)', symbol='x', size=6)
+                ))
+            
+            if mask_down.any():
+                fig.add_trace(go.Scatter(
+                    x=ch_data.index[mask_down], 
+                    y=df['close'].iloc[-exhaustion_lookback:][mask_down],
+                    mode='markers', name='Downside Exhaustion',
+                    marker=dict(color='rgba(255, 0, 0, 0.6)', symbol='x', size=6)
+                ))
+
+            # 3. Status Metric
+            trend_dir = "UP" if slope > 0 else "DOWN"
+            health = "HEALTHY"
+            health_color = "green"
+            
+            if leak_score > 20: 
+                health = "EXHAUSTED / LEAKING"
+                health_color = "red"
+            elif leak_score > 5:
+                health = "WEAKENING"
+                health_color = "orange"
+                
+            st.info(f"**Trend Diagnostic:** {trend_dir} Trend | Structure: :{health_color}[{health}] (Leakage: {leak_score:.1f}%)")
     
     # Fib Overlay
     if use_fibs:
@@ -340,7 +453,6 @@ if st.session_state['data_loaded'] and 'viz_data' in st.session_state:
             label = f"Lvl: {l:.2f}"
         
         # Find Start Point (First Interaction)
-        # Find earliest candle where Low <= L <= High
         mask = (df['low'] <= l) & (df['high'] >= l)
         
         if mask.any():
@@ -376,7 +488,7 @@ if st.session_state['data_loaded'] and 'viz_data' in st.session_state:
         height=800,
         xaxis_rangeslider_visible=False,
         hovermode="x unified",
-        uirevision='constant'  # UPDATED: Keeps zoom level constant across refreshes
+        uirevision='constant'  # Keeps zoom level constant across refreshes
     )
     
     st.plotly_chart(fig, use_container_width=True)
