@@ -29,7 +29,7 @@ MT5_CREDS = {
     "login": 54704353,          
     "password": "p@s5k3yHFM",   
     "server": "HFMarketsSA-Live2",
-    "symbol": "#BTCUSD",         
+    "symbol": "XAUUSD",         
     "timeframe": mt5.TIMEFRAME_M5,
     "days_history": 180 
 }

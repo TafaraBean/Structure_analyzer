@@ -14,6 +14,8 @@ import plotly.graph_objects as go
 import MetaTrader5 as mt5
 from sklearn.cluster import KMeans
 import os
+import time
+from datetime import datetime
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -62,6 +64,34 @@ HTF_MAPPING = {
     mt5.TIMEFRAME_H1: mt5.TIMEFRAME_D1
 }
 
+# --- LIVE MODE TOGGLE ---
+st.sidebar.markdown("---")
+live_mode = st.sidebar.checkbox("🔴 Enable Live Refresh (10s)", value=False)
+
+# Data Depth
+# UPDATED: Lowered min_value to 1 day for granular analysis
+days_to_fetch = st.sidebar.slider("Days of History", min_value=1, max_value=730, value=30)
+
+# Strategy Selector
+st.sidebar.markdown("---")
+st.sidebar.header("⚔️ Signal Logic")
+
+n_clusters = st.sidebar.slider("Number of Levels", 3, 10, 3)
+ma_period = st.sidebar.number_input("Trend MA Period", min_value=10, max_value=200, value=40)
+min_history_days = st.sidebar.number_input("Lookback Days (Structure)", value=7, min_value=1)
+
+c1, c2 = st.columns(2)
+use_trend_filter = c1.checkbox("Use Trend Filter", value=True)
+# This checkbox controls both HTF and Fib confluence
+use_confluence = c2.checkbox("Use Golden Zone (HTF+Fib)", value=True, help="Filters levels against Higher Timeframe & Fibs")
+use_fibs = use_confluence # Link fibs to confluence switch for simplicity
+
+strategies = st.sidebar.multiselect(
+    "Show Signals",
+    ["Support Bounce (Buy)", "Resistance Reject (Sell)"],
+    default=["Support Bounce (Buy)", "Resistance Reject (Sell)"]
+)
+
 # --- HELPER FUNCTIONS ---
 
 def get_candles_count(timeframe, days):
@@ -69,6 +99,12 @@ def get_candles_count(timeframe, days):
     elif timeframe == mt5.TIMEFRAME_M15: return days * 24 * 4
     elif timeframe == mt5.TIMEFRAME_M5: return days * 24 * 12
     return days * 24
+
+def get_candles_per_day(timeframe):
+    if timeframe == mt5.TIMEFRAME_H1: return 24
+    elif timeframe == mt5.TIMEFRAME_M15: return 96
+    elif timeframe == mt5.TIMEFRAME_M5: return 288
+    return 24
 
 def get_mt5_data(login, password, server, symbol, timeframe, num_candles):
     """Connects to MT5 and fetches data."""
@@ -95,7 +131,8 @@ def get_mt5_data(login, password, server, symbol, timeframe, num_candles):
     df.set_index('time', inplace=True)
     return df, "Success"
 
-@st.cache_data
+# CACHE WITH TTL (Time To Live) = 10 Seconds
+@st.cache_data(ttl=10)
 def get_market_data_visual(interval_label, days_back, use_mt5=False, mt5_creds=None):
     """Fetches Data for Visualization."""
     if use_mt5 and mt5_creds:
@@ -117,6 +154,9 @@ def get_market_data_visual(interval_label, days_back, use_mt5=False, mt5_creds=N
              mt5_creds['login'], mt5_creds['pass'], mt5_creds['server'], 
              mt5_creds['symbol'], htf_const, htf_candles
         )
+        
+        if df_htf is not None and not df_htf.empty:
+            df_htf = df_htf.iloc[:-1] # Remove current candle to prevent lookahead
         
         return df_base, df_htf
     return None, None
@@ -204,32 +244,39 @@ def get_confluent_levels(base_levels, htf_levels, fib_levels, tolerance=0.003):
             
     return confluent
 
+def highlight_regimes(fig, index, mask, color, label):
+    if not mask.any(): return
+    blocks = mask.ne(mask.shift()).cumsum()
+    true_blocks = blocks[mask]
+    for _, block in true_blocks.groupby(true_blocks):
+        fig.add_vrect(x0=block.index[0], x1=block.index[-1], fillcolor=color, opacity=0.15, layer="below", line_width=0)
+
 # --- DASHBOARD LOGIC ---
 
 if 'data_loaded' not in st.session_state:
     st.session_state['data_loaded'] = False
 
-# Visualization Settings
-st.sidebar.markdown("### 👁️ Visualization Settings")
-days_viz = st.sidebar.slider("Days to Visualize", 5, 60, 10)
-n_levels = st.sidebar.slider("Number of S/R Levels", 3, 15, 6)
-use_confluence = st.sidebar.checkbox("Show Confluence (HTF/Fib)", value=True)
-use_fibs = st.sidebar.checkbox("Show Fibonacci Overlay", value=True)
+# Button Logic: If Live Mode is ON, we don't need to click the button to refresh
+fetch_needed = st.sidebar.button("🚀 Render Chart", type="primary") or live_mode
 
-if st.sidebar.button("🚀 Render Chart", type="primary"):
+if fetch_needed:
     mt5_creds = {
         'login': mt5_login, 'pass': mt5_pass, 'server': mt5_server, 'symbol': mt5_symbol
     }
     
-    with st.spinner("Calculating Structure..."):
-        df_base, df_htf = get_market_data_visual(selected_tf_label, days_viz, use_mt5=True, mt5_creds=mt5_creds)
-        
-        if df_base is not None:
-            st.session_state['viz_data'] = df_base
-            st.session_state['viz_htf'] = df_htf
-            st.session_state['data_loaded'] = True
-        else:
-            st.error("Failed to fetch data from MT5.")
+    # In live mode, we skip the spinner to make it less distracting
+    if live_mode:
+        df_base, df_htf = get_market_data_visual(selected_tf_label, days_to_fetch, use_mt5=True, mt5_creds=mt5_creds)
+    else:
+        with st.spinner("Calculating Structure..."):
+            df_base, df_htf = get_market_data_visual(selected_tf_label, days_to_fetch, use_mt5=True, mt5_creds=mt5_creds)
+    
+    if df_base is not None:
+        st.session_state['viz_data'] = df_base
+        st.session_state['viz_htf'] = df_htf
+        st.session_state['data_loaded'] = True
+    else:
+        st.error("Failed to fetch data from MT5.")
 
 # --- MAIN DISPLAY ---
 
@@ -238,12 +285,13 @@ if st.session_state['data_loaded'] and 'viz_data' in st.session_state:
     df_htf = st.session_state.get('viz_htf', None)
     
     # 1. Calculate Base Structure
-    base_levels = calculate_levels_weighted_kmeans(df, n_clusters=n_levels)
+    base_levels = calculate_levels_weighted_kmeans(df, n_clusters=n_clusters)
     
     # 2. Calculate Confluence
     htf_levels = []
     if use_confluence and df_htf is not None:
-        htf_levels = calculate_levels_weighted_kmeans(df_htf, max(3, n_levels // 2))
+        # FIXED: Use n_clusters variable here
+        htf_levels = calculate_levels_weighted_kmeans(df_htf, max(3, n_clusters // 2))
         
     fib_levels = calculate_fib_levels(df) if use_fibs else {}
     
@@ -316,13 +364,19 @@ if st.session_state['data_loaded'] and 'viz_data' in st.session_state:
                 font=dict(color=color)
             )
 
+    # Current Price Title Update
+    current_price = df['close'].iloc[-1]
+    update_time = datetime.now().strftime("%H:%M:%S")
+    title_text = f"Structural Analysis: {mt5_symbol} ({selected_tf_label}) | Price: {current_price:.2f} | Last Update: {update_time}"
+
     fig.update_layout(
-        title=f"Structural Analysis: {mt5_symbol} ({selected_tf_label})",
+        title=title_text,
         yaxis_title="Price",
         template="plotly_dark",
         height=800,
         xaxis_rangeslider_visible=False,
-        hovermode="x unified"
+        hovermode="x unified",
+        uirevision='constant'  # UPDATED: Keeps zoom level constant across refreshes
     )
     
     st.plotly_chart(fig, use_container_width=True)
@@ -332,13 +386,18 @@ if st.session_state['data_loaded'] and 'viz_data' in st.session_state:
     **Structural Breakdown:**
     * **{len(base_levels)} Base Levels** found using Volume-Weighted Snapback Clustering.
     * **{len(confluent_data)} Golden Zones** confirmed by Higher Timeframe or Fibonacci.
-    * **Current Price:** {df['close'].iloc[-1]:.2f}
+    * **Current Price:** {current_price:.2f}
     """)
     
     with st.expander("Raw Level Data"):
         st.write("Base Levels:", base_levels)
         if use_confluence:
             st.write("HTF Levels:", htf_levels)
+            
+    # --- AUTO REFRESH LOGIC ---
+    if live_mode:
+        time.sleep(10)
+        st.rerun()
 
 else:
     st.info("👈 Enter settings and click 'Render Chart' to visualize structure.")
