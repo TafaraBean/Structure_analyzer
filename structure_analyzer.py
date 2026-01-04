@@ -15,8 +15,8 @@ import MetaTrader5 as mt5
 from sklearn.cluster import KMeans
 from scipy.stats import linregress
 import os
-import time  # Added time
-from datetime import datetime  # Added datetime
+import time
+from datetime import datetime
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -25,13 +25,13 @@ load_dotenv()
 # --- CONFIGURATION & PAGE SETUP ---
 st.set_page_config(page_title="MT5 Structural Scanner", layout="wide", initial_sidebar_state="expanded")
 
-st.title("⚡ MT5 Structural Scanner: Golden Zone Visualizer")
+st.title("⚡ MT5 Structural Scanner: Golden Zone & Trend Health")
 st.markdown("""
-**Objective:** Visualize Algorithmic Support & Resistance Levels dynamically.
+**Objective:** Visualize Algorithmic Structure and Trend Health dynamically.
 **Logic:**
 * **Structure:** Volume-Weighted K-Means on Velocity Reversals (Snapbacks).
 * **Confluence:** Filtered by Higher Timeframe (HTF) & Fibonacci levels.
-* **Trend Exhaustion:** Linear Regression Channels to detect when a trend is "leaking" (Overextended).
+* **Trend Exhaustion:** Regression Channel analysis to detect when a trend is "leaking" (Overextended).
 """)
 
 # --- SIDEBAR: DATA CONTROLS ---
@@ -70,7 +70,7 @@ st.sidebar.markdown("---")
 live_mode = st.sidebar.checkbox("🔴 Enable Live Refresh (10s)", value=False)
 
 # Data Depth
-days_to_fetch = st.sidebar.slider("Days of History", min_value=1, max_value=730, value=30)
+days_to_fetch = st.sidebar.slider("Days of History", min_value=30, max_value=730, value=90)
 
 # Strategy Selector
 st.sidebar.markdown("---")
@@ -86,17 +86,17 @@ use_trend_filter = c1.checkbox("Use Trend Filter", value=True)
 use_confluence = c2.checkbox("Use Golden Zone (HTF+Fib)", value=True, help="Filters levels against Higher Timeframe & Fibs")
 use_fibs = use_confluence # Link fibs to confluence switch for simplicity
 
-strategies = st.sidebar.multiselect(
-    "Show Signals",
-    ["Support Bounce (Buy)", "Resistance Reject (Sell)"],
-    default=["Support Bounce (Buy)", "Resistance Reject (Sell)"]
-)
-
 # Trend Exhaustion Settings
 st.sidebar.markdown("---")
 st.sidebar.header("📉 Trend Exhaustion")
 show_exhaustion = st.sidebar.checkbox("Show Exhaustion Channels", value=False)
 exhaustion_lookback = st.sidebar.slider("Regression Lookback", 50, 300, 100, help="Window to find Max/Min pivots for the channel.")
+
+strategies = st.sidebar.multiselect(
+    "Show Signals",
+    ["Support Bounce (Buy)", "Resistance Reject (Sell)"],
+    default=["Support Bounce (Buy)", "Resistance Reject (Sell)"]
+)
 
 # --- HELPER FUNCTIONS ---
 
@@ -153,6 +153,7 @@ def get_market_data_visual(interval_label, days_back, use_mt5=False, mt5_creds=N
         # Fetch HTF
         df_htf = None
         htf_const = HTF_MAPPING.get(tf_const, mt5.TIMEFRAME_D1)
+        # Fetch fewer candles for HTF (same time duration)
         htf_candles = days_back * 24 if htf_const == mt5.TIMEFRAME_H1 else days_back + 50
         
         df_htf, msg_htf = get_mt5_data(
@@ -160,8 +161,10 @@ def get_market_data_visual(interval_label, days_back, use_mt5=False, mt5_creds=N
              mt5_creds['symbol'], htf_const, htf_candles
         )
         
+        # FIX: Remove the last row from HTF data (Current unfinished candle)
+        # This prevents repainting bias where the daily level shifts during the day.
         if df_htf is not None and not df_htf.empty:
-            df_htf = df_htf.iloc[:-1] # Remove current candle to prevent lookahead
+            df_htf = df_htf.iloc[:-1]
         
         return df_base, df_htf
     return None, None
@@ -178,6 +181,7 @@ def calculate_levels_weighted_kmeans(df_slice, n_clusters):
     rev_highs = df_slice.loc[reversal_mask, 'high'].values.reshape(-1, 1)
     rev_lows = df_slice.loc[reversal_mask, 'low'].values.reshape(-1, 1)
     
+    # Weighting Logic
     vol_col = 'real_volume' if 'real_volume' in df_slice.columns and df_slice['real_volume'].sum() > 0 else 'tick_volume'
     vol_series = df_slice[vol_col]
     range_series = df_slice['high'] - df_slice['low']
@@ -186,6 +190,7 @@ def calculate_levels_weighted_kmeans(df_slice, n_clusters):
         if len(arr) == 0 or np.max(arr) == np.min(arr): return np.ones_like(arr)
         return (arr - np.min(arr)) / (np.max(arr) - np.min(arr)) + 0.1
 
+    # Extract weights at reversal points
     w_vol = normalize(vol_series.loc[reversal_mask].values)
     w_rng = normalize(range_series.loc[reversal_mask].values)
     combined_weights = w_vol * w_rng
@@ -223,8 +228,9 @@ def calculate_trend_exhaustion(df, lookback=100, std_dev_mult=2.0):
     """
     Calculates a regression channel between the High/Low of the period 
     and measures how much price 'leaks' outside this channel.
+    Zero Lookahead: Uses ONLY the data provided in 'df'.
     """
-    if len(df) < lookback: return None, None, None
+    if len(df) < lookback: return None, None, None, None
     
     # 1. Identify Pivots in the lookback window
     window_df = df.iloc[-lookback:]
@@ -236,8 +242,7 @@ def calculate_trend_exhaustion(df, lookback=100, std_dev_mult=2.0):
     t_end = df.index.get_loc(max(id_max, id_min))
     
     # 2. Fit Regression on the Trend Segment (Pivot to Pivot)
-    # We use integer indices (0, 1, 2...) as X to project forward easily
-    if t_end - t_start < 5: return None, None, None # Too close
+    if t_end - t_start < 5: return None, None, None, None
     
     trend_segment = df.iloc[t_start : t_end+1]
     x = np.arange(t_start, t_end+1)
@@ -250,8 +255,8 @@ def calculate_trend_exhaustion(df, lookback=100, std_dev_mult=2.0):
     std_resid = np.std(residuals)
     channel_width = std_resid * std_dev_mult
     
-    # 3. Project Channel Forward to Current Time
-    # Create arrays for the full lookback window + current
+    # 3. Project Channel Forward
+    # Create arrays for the full lookback window
     full_window_indices = np.arange(len(df) - lookback, len(df))
     
     mid_line = slope * full_window_indices + intercept
@@ -259,19 +264,14 @@ def calculate_trend_exhaustion(df, lookback=100, std_dev_mult=2.0):
     lower_line = mid_line - channel_width
     
     # 4. Measure Leakage (Density outside channel)
-    # Compare actual closes in the full window to the projected lines
     current_closes = df['close'].iloc[-lookback:].values
-    
     is_above = current_closes > upper_line
     is_below = current_closes < lower_line
     is_leaking = is_above | is_below
     
-    # Calculate Density (Exhaustion Metric)
-    # Weighted towards recent data (last 20% of window)
     recent_n = int(lookback * 0.2)
     leakage_score = np.mean(is_leaking[-recent_n:]) * 100
     
-    # Pack data for plotting
     channel_data = pd.DataFrame({
         'mid': mid_line,
         'upper': upper_line,
@@ -279,9 +279,15 @@ def calculate_trend_exhaustion(df, lookback=100, std_dev_mult=2.0):
         'is_leaking': is_leaking
     }, index=df.index[-lookback:])
     
-    return channel_data, leakage_score, slope
+    # Return regression params for future projection
+    reg_params = (slope, intercept, channel_width)
+    
+    return channel_data, leakage_score, slope, reg_params
 
 def get_confluent_levels(base_levels, htf_levels, fib_levels, tolerance=0.003):
+    """
+    Identifies levels that exist in Base AND (HTF OR Fibs) within tolerance.
+    """
     confluent = []
     fib_vals = list(fib_levels.values()) if fib_levels else []
     
@@ -341,171 +347,220 @@ if fetch_needed:
 # --- MAIN DISPLAY ---
 
 if st.session_state['data_loaded'] and 'viz_data' in st.session_state:
-    df = st.session_state['viz_data']
-    df_htf = st.session_state.get('viz_htf', None)
+    df_full = st.session_state['viz_data']
+    df_htf_full = st.session_state.get('viz_htf', None)
     
-    # 1. Calculate Base Structure
-    base_levels = calculate_levels_weighted_kmeans(df, n_clusters=n_clusters)
+    # --- TIME TRAVEL SLIDER ---
+    st.markdown("### ⏳ Time Travel (Verify History)")
     
-    # 2. Calculate Confluence
-    htf_levels = []
-    if use_confluence and df_htf is not None:
-        # Use n_clusters variable here
-        htf_levels = calculate_levels_weighted_kmeans(df_htf, max(3, n_clusters // 2))
+    max_idx = len(df_full) - 1
+    candles_per_day = get_candles_per_day(selected_tf_mt5)
+    min_idx = min_history_days * candles_per_day
+    
+    if min_idx >= max_idx:
+        st.error(f"Not enough data for Lookback of {min_history_days} days. Fetch more history.")
+    else:
+        # Default to "Now"
+        sim_idx = st.slider("Playback Position", min_value=min_idx, max_value=max_idx, value=max_idx)
         
-    fib_levels = calculate_fib_levels(df) if use_fibs else {}
-    
-    confluent_data = get_confluent_levels(base_levels, htf_levels, fib_levels)
-    confluent_map = {c['level']: c['type'] for c in confluent_data}
-    
-    # 3. Plot
-    fig = go.Figure()
-
-    # Candlesticks
-    fig.add_trace(go.Candlestick(
-        x=df.index,
-        open=df['open'], high=df['high'],
-        low=df['low'], close=df['close'],
-        name=mt5_symbol
-    ))
-
-    # --- TREND EXHAUSTION OVERLAY ---
-    if show_exhaustion:
-        # Calculate
-        ch_data, leak_score, slope = calculate_trend_exhaustion(df, lookback=exhaustion_lookback)
+        sim_time = df_full.index[sim_idx]
+        st.caption(f"Simulating Analysis at: **{sim_time}**")
         
-        if ch_data is not None:
-            # 1. Plot Channel Bounds
-            fig.add_trace(go.Scatter(
-                x=ch_data.index, y=ch_data['upper'], 
-                mode='lines', name='Upper Channel',
-                line=dict(color='gray', width=1, dash='dash')
-            ))
+        # 1. STRICT DATA PARTITIONING
+        # "Memory" (Past): Data STRICTLY UP TO sim_idx
+        df_slice = df_full.iloc[sim_idx - min_idx : sim_idx] 
+        
+        # 2. Calculate Base Structure on MEMORY only
+        base_levels = calculate_levels_weighted_kmeans(df_slice, n_clusters=n_clusters)
+        
+        # 3. Calculate Confluence (STRICT Anti-Lookahead)
+        htf_levels = []
+        if use_confluence and df_htf_full is not None:
+            # SAFETY FILTER: Only use HTF candles where the DATE is strictly BEFORE sim_time date
+            sim_date = pd.Timestamp(sim_time.date())
+            df_htf_safe = df_htf_full[df_htf_full.index < sim_date]
             
-            fig.add_trace(go.Scatter(
-                x=ch_data.index, y=ch_data['lower'], 
-                mode='lines', name='Lower Channel',
-                line=dict(color='gray', width=1, dash='dash')
-            ))
+            if len(df_htf_safe) > 20:
+                htf_levels = calculate_levels_weighted_kmeans(df_htf_safe.iloc[-60:], max(3, n_clusters // 2))
             
-            # 2. Visualizing Leakage
-            mask_up = ch_data['is_leaking'] & (df['close'].iloc[-exhaustion_lookback:] > ch_data['upper'])
-            mask_down = ch_data['is_leaking'] & (df['close'].iloc[-exhaustion_lookback:] < ch_data['lower'])
-            
-            if mask_up.any():
-                fig.add_trace(go.Scatter(
-                    x=ch_data.index[mask_up], 
-                    y=df['close'].iloc[-exhaustion_lookback:][mask_up],
-                    mode='markers', name='Upside Exhaustion',
-                    marker=dict(color='rgba(255, 0, 0, 0.6)', symbol='x', size=6)
-                ))
-            
-            if mask_down.any():
-                fig.add_trace(go.Scatter(
-                    x=ch_data.index[mask_down], 
-                    y=df['close'].iloc[-exhaustion_lookback:][mask_down],
-                    mode='markers', name='Downside Exhaustion',
-                    marker=dict(color='rgba(255, 0, 0, 0.6)', symbol='x', size=6)
-                ))
+        fib_levels = calculate_fib_levels(df_slice) if use_fibs else {}
+        
+        confluent_data = get_confluent_levels(base_levels, htf_levels, fib_levels)
+        confluent_map = {c['level']: c['type'] for c in confluent_data}
+        
+        # 4. PLOTTING
+        fig = go.Figure()
 
-            # 3. Status Metric
-            trend_dir = "UP" if slope > 0 else "DOWN"
-            health = "HEALTHY"
-            health_color = "green"
+        # Ghost Trace (Future)
+        df_future = df_full.iloc[sim_idx:]
+        if not df_future.empty:
+            fig.add_trace(go.Candlestick(
+                x=df_future.index,
+                open=df_future['open'], high=df_future['high'],
+                low=df_future['low'], close=df_future['close'],
+                name="Future (Unknown)",
+                increasing_line_color='gray', decreasing_line_color='gray',
+                opacity=0.3
+            ))
+        
+        # Active Trace (History)
+        fig.add_trace(go.Candlestick(
+            x=df_slice.index,
+            open=df_slice['open'], high=df_slice['high'],
+            low=df_slice['low'], close=df_slice['close'],
+            name="Analyzed Data"
+        ))
+        
+        # Simulation Marker
+        fig.add_vline(x=sim_time.value/1e6, line_width=2, line_dash="dash", line_color="white", annotation_text="ANALYSIS TIME")
+
+        # --- TREND EXHAUSTION OVERLAY ---
+        if show_exhaustion:
+            # Calculate strictly on the visible slice (Past)
+            ch_data, leak_score, slope, reg_params = calculate_trend_exhaustion(df_slice, lookback=exhaustion_lookback)
             
-            if leak_score > 20: 
-                health = "EXHAUSTED / LEAKING"
-                health_color = "red"
-            elif leak_score > 5:
-                health = "WEAKENING"
-                health_color = "orange"
+            if ch_data is not None:
+                # 1. Plot Channel Bounds (History)
+                fig.add_trace(go.Scatter(
+                    x=ch_data.index, y=ch_data['upper'], mode='lines', name='Upper Channel',
+                    line=dict(color='gray', width=1, dash='dash')
+                ))
+                fig.add_trace(go.Scatter(
+                    x=ch_data.index, y=ch_data['lower'], mode='lines', name='Lower Channel',
+                    line=dict(color='gray', width=1, dash='dash')
+                ))
                 
-            st.info(f"**Trend Diagnostic:** {trend_dir} Trend | Structure: :{health_color}[{health}] (Leakage: {leak_score:.1f}%)")
-    
-    # Fib Overlay
-    if use_fibs:
-        for ratio, val in fib_levels.items():
-            fig.add_hline(y=val, line_color="cyan", line_width=1, line_dash="dot", opacity=0.3, annotation_text=f"Fib {ratio}")
+                # 2. Visualizing Leakage
+                mask_up = ch_data['is_leaking'] & (df_slice['close'].iloc[-exhaustion_lookback:] > ch_data['upper'])
+                mask_down = ch_data['is_leaking'] & (df_slice['close'].iloc[-exhaustion_lookback:] < ch_data['lower'])
+                
+                if mask_up.any():
+                    fig.add_trace(go.Scatter(x=ch_data.index[mask_up], y=df_slice['close'].iloc[-exhaustion_lookback:][mask_up],
+                        mode='markers', name='Upside Exhaustion', marker=dict(color='rgba(255, 0, 0, 0.6)', symbol='x', size=6)))
+                
+                if mask_down.any():
+                    fig.add_trace(go.Scatter(x=ch_data.index[mask_down], y=df_slice['close'].iloc[-exhaustion_lookback:][mask_down],
+                        mode='markers', name='Downside Exhaustion', marker=dict(color='rgba(255, 0, 0, 0.6)', symbol='x', size=6)))
 
-    # Structural Lines (Smart Segments)
-    for l in base_levels:
-        is_confluent = l in confluent_map
-        conf_type = confluent_map.get(l, "")
-        
-        if is_confluent:
-            if conf_type == 'HTF+Fib':
-                color = "gold"
-                width = 4
-                label = f"🏆 GOLDEN ZONE: {l:.2f}"
-            elif conf_type == 'Fib':
-                color = "cyan"
-                width = 2
-                label = f"Fib Confluence: {l:.2f}"
+                # 3. Future Projection (Visualization only)
+                # Project the regression lines into the future (Gray zone) to check if trend holds
+                if not df_future.empty:
+                    f_slope, f_intercept, f_width = reg_params
+                    # Generate indices for future (continuing from end of slice)
+                    start_idx = len(df_full) - len(df_future) # Incorrect for index math, using timestamps better
+                    # Simpler: Create X array extension
+                    future_len = len(df_future)
+                    # We need the X values relative to the regression calculation
+                    # X for regression ended at len(df_slice) - 1
+                    # So future X is range(len(df_slice), len(df_slice) + future_len)
+                    
+                    # NOTE: Regression was calc'd on a small window at the END of df_slice.
+                    # We need to project that specific line forward.
+                    # Regression X values were 0..lookback-1 corresponding to df_slice[-lookback:]
+                    # So next candle is X = lookback
+                    
+                    x_fut = np.arange(exhaustion_lookback, exhaustion_lookback + future_len)
+                    # To align with chart, we need to shift the intercept relative to the slice window?
+                    # The regression was y = mx + c where x=0 is df_slice.index[-lookback]
+                    
+                    # Re-calculate mid-line using the stored params for the future segment
+                    fut_mid = f_slope * x_fut + f_intercept
+                    fut_upper = fut_mid + f_width
+                    fut_lower = fut_mid - f_width
+                    
+                    fig.add_trace(go.Scatter(x=df_future.index, y=fut_upper, mode='lines', name='Channel Project', line=dict(color='gray', width=1, dash='dot'), opacity=0.3, showlegend=False))
+                    fig.add_trace(go.Scatter(x=df_future.index, y=fut_lower, mode='lines', name='Channel Project', line=dict(color='gray', width=1, dash='dot'), opacity=0.3, showlegend=False))
+
+                # 4. Status Metric
+                trend_dir = "UP" if slope > 0 else "DOWN"
+                health = "HEALTHY"
+                health_color = "green"
+                if leak_score > 20: 
+                    health = "EXHAUSTED / LEAKING"
+                    health_color = "red"
+                elif leak_score > 5:
+                    health = "WEAKENING"
+                    health_color = "orange"
+                st.info(f"**Trend Diagnostic:** {trend_dir} Trend | Structure: :{health_color}[{health}] (Leakage: {leak_score:.1f}%)")
+
+        # Fib Overlay (Based on slice)
+        if use_fibs:
+            for ratio, val in fib_levels.items():
+                f_color = "gold" if ratio == 0.618 else "cyan"
+                f_width = 2 if ratio == 0.618 else 1
+                fig.add_shape(
+                    type="line", x0=df_slice.index[0], x1=df_full.index[-1], 
+                    y0=val, y1=val,
+                    line=dict(color=f_color, width=f_width, dash="dot"),
+                    opacity=0.5
+                )
+
+        # Structural Lines (Projected from Slice into Future)
+        for l in base_levels:
+            is_confluent = l in confluent_map
+            conf_type = confluent_map.get(l, "")
+            
+            if is_confluent:
+                if conf_type == 'HTF+Fib':
+                    color = "gold"
+                    width = 4
+                    label = f"🏆 GOLDEN ZONE: {l:.2f}"
+                elif conf_type == 'Fib':
+                    color = "cyan"
+                    width = 2
+                    label = f"Fib Confluence: {l:.2f}"
+                else:
+                    color = "mediumpurple"
+                    width = 3
+                    label = f"HTF Confluence: {l:.2f}"
+                dash = "solid"
             else:
-                color = "mediumpurple"
-                width = 3
-                label = f"HTF Confluence: {l:.2f}"
-            dash = "solid"
-        else:
-            color = "yellow"
-            width = 1
-            dash = "dot"
-            label = f"Lvl: {l:.2f}"
-        
-        # Find Start Point (First Interaction)
-        mask = (df['low'] <= l) & (df['high'] >= l)
-        
-        if mask.any():
-            start_date = mask.idxmax()
+                color = "yellow"
+                width = 1
+                dash = "dot"
+                label = f"Lvl: {l:.2f}"
             
-            # Draw Segment
-            fig.add_shape(
-                type="line",
-                x0=start_date, y0=l,
-                x1=df.index[-1], y1=l,
-                line=dict(color=color, width=width, dash=dash),
-            )
+            # Find Start Point (First Interaction WITHIN MEMORY)
+            mask = (df_slice['low'] <= l) & (df_slice['high'] >= l)
             
-            # Label
-            fig.add_annotation(
-                x=df.index[-1], y=l,
-                text=label,
-                showarrow=False,
-                xanchor="left",
-                yshift=5,
-                font=dict(color=color)
-            )
+            if mask.any():
+                start_date = mask.idxmax()
+                
+                # Draw Segment
+                fig.add_shape(
+                    type="line",
+                    x0=start_date, y0=l,
+                    x1=df_full.index[-1], y1=l, # Project forward to show validity
+                    line=dict(color=color, width=width, dash=dash),
+                )
+                
+                # Label at Future edge
+                fig.add_annotation(
+                    x=df_full.index[-1], y=l,
+                    text=label,
+                    showarrow=False,
+                    xanchor="left",
+                    yshift=5,
+                    font=dict(color=color)
+                )
 
-    # Current Price Title Update
-    current_price = df['close'].iloc[-1]
-    update_time = datetime.now().strftime("%H:%M:%S")
-    title_text = f"Structural Analysis: {mt5_symbol} ({selected_tf_label}) | Price: {current_price:.2f} | Last Update: {update_time}"
+        current_price = df_slice['close'].iloc[-1]
+        title_text = f"Time Travel: {mt5_symbol} @ {sim_time} | Price: {current_price:.2f}"
 
-    fig.update_layout(
-        title=title_text,
-        yaxis_title="Price",
-        template="plotly_dark",
-        height=800,
-        xaxis_rangeslider_visible=False,
-        hovermode="x unified",
-        uirevision='constant'  # Keeps zoom level constant across refreshes
-    )
-    
-    st.plotly_chart(fig, use_container_width=True)
-    
-    # 4. Info Box
-    st.info(f"""
-    **Structural Breakdown:**
-    * **{len(base_levels)} Base Levels** found using Volume-Weighted Snapback Clustering.
-    * **{len(confluent_data)} Golden Zones** confirmed by Higher Timeframe or Fibonacci.
-    * **Current Price:** {current_price:.2f}
-    """)
-    
-    with st.expander("Raw Level Data"):
-        st.write("Base Levels:", base_levels)
-        if use_confluence:
-            st.write("HTF Levels:", htf_levels)
-            
+        fig.update_layout(
+            title=title_text,
+            yaxis_title="Price",
+            template="plotly_dark",
+            height=800,
+            xaxis_rangeslider_visible=False,
+            hovermode="x unified",
+            uirevision='constant' 
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+        
+        st.info(f"**Structural Snapshot:** Levels derived from data spanning {df_slice.index[0]} to {sim_time}. Future price action (Gray) validates if levels held.")
+                
     # --- AUTO REFRESH LOGIC ---
     if live_mode:
         time.sleep(10)
