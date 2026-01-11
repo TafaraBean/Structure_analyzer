@@ -5,6 +5,7 @@ import talib
 import time
 import os
 import csv
+import requests  # <--- NEW IMPORT
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 
@@ -15,27 +16,28 @@ load_dotenv()
 LOGIN = int(os.getenv("MT5_LOGIN"))
 PASSWORD = os.getenv("MT5_PASSWORD")
 SERVER = os.getenv("MT5_SERVER")
+DISCORD_URL = os.getenv("DISCORD_WEBHOOK_URL") # <--- NEW CONFIG
 
 # TRADING SETTINGS
-SYMBOL = "XAUUSDm"       
+SYMBOL = "XAUUSDz"       
 TIMEFRAME = mt5.TIMEFRAME_M5
 TIMEFRAME_MINUTES = 5
-LOT_SIZE = 0.35          
+LOT_SIZE = 0.01          
 MAGIC_NUMBER = 123456   
 DEVIATION = 20          
 LOG_FILE = "trade_log.csv"
 
-# STRATEGY PARAMETERS (Restored to your specific request)
+# STRATEGY PARAMETERS
 ATR_PERIOD = 14
-VOL_THRESHOLD_MA = 30    # As per your 0.33 trail script
-SL_ATR_MULT = 1.75       # As per your 0.33 trail script
-TP_ATR_MULT = 3.42       # As per your 0.33 trail script
+VOL_THRESHOLD_MA = 30    
+SL_ATR_MULT = 1.75       
+TP_ATR_MULT = 3.42       
 
 # RISK MANAGEMENT
-MAX_CONSECUTIVE_LOSSES = 2
-COOLDOWN_BARS = 60      # As per your 0.33 trail script
+MAX_CONSECUTIVE_LOSSES = 8
+COOLDOWN_BARS = 60      
 USE_TRAILING = True
-TRAIL_TRIGGER_PCT = 0.33 # <--- The requested parameter
+TRAIL_TRIGGER_PCT = 0.33 
 MAX_HOLD_BARS = 50 
 
 # GLOBAL STATE
@@ -43,6 +45,28 @@ consecutive_losses = 0
 cooldown_until = datetime.min
 last_processed_candle_time = None
 
+# --- DISCORD FUNCTION ---
+def send_discord_alert(title, message, color=0x3498db):
+    """
+    Sends an embedded message to Discord.
+    Colors: Green (0x2ecc71), Red (0xe74c3c), Blue (0x3498db), Orange (0xe67e22)
+    """
+    if not DISCORD_URL: return
+
+    data = {
+        "embeds": [{
+            "title": title,
+            "description": message,
+            "color": color,
+            "footer": {"text": f"BaseBot • {datetime.now().strftime('%H:%M:%S')}"}
+        }]
+    }
+    try:
+        requests.post(DISCORD_URL, json=data)
+    except Exception as e:
+        print(f"⚠️ Discord Error: {e}")
+
+# --- MT5 FUNCTIONS ---
 def initialize_mt5():
     if not mt5.initialize():
         print(f"Startup Failed: {mt5.last_error()}")
@@ -52,9 +76,13 @@ def initialize_mt5():
         mt5.shutdown()
         return False
     print(f"✅ Connected to {SERVER} as {LOGIN}")
+    send_discord_alert("🤖 Bot Started", f"Connected to {SERVER}\nSymbol: {SYMBOL}", 0x3498db) # <--- ALERT
     return True
 
 def log_trade_attempt(symbol, signal, price, sl, tp, volume, status, comment, ticket, atr_val=0, retcode=0):
+    # ... (Keep your existing CSV logging logic exactly as is) ...
+    # I am omitting the full CSV code block here to save space, 
+    # but keep your original `log_trade_attempt` function body here.
     file_exists = os.path.isfile(LOG_FILE)
     try:
         with open(LOG_FILE, mode='a', newline='') as file:
@@ -85,39 +113,26 @@ def get_closed_candles(symbol, timeframe, n=200):
     df = df.iloc[:-1] 
     return df
 
-# --- BASE SIGNAL LOGIC (No Smart Filters) ---
 def check_for_signal(df):
     hi = df['high'].values
     lo = df['low'].values
     cl = df['close'].values
     op = df['open'].values
     
-    # 1. Volatility (Simple High Vol Check)
     atr = talib.ATR(hi, lo, cl, timeperiod=ATR_PERIOD)
     atr_ma = talib.SMA(atr, timeperiod=VOL_THRESHOLD_MA)
-    
     curr_atr = atr[-1]
     
-    # Logic: Just check if ATR is above the MA
-    if curr_atr <= atr_ma[-1]:
-        return 0, curr_atr # Low Volatility -> Exit
+    if curr_atr <= atr_ma[-1]: return 0, curr_atr 
 
-    # 2. Patterns
     engulf = talib.CDLENGULFING(op, hi, lo, cl)[-1]
     hammer = talib.CDLHAMMER(op, hi, lo, cl)[-1]
     star = talib.CDLSHOOTINGSTAR(op, hi, lo, cl)[-1]
     hanging = talib.CDLHANGINGMAN(op, hi, lo, cl)[-1]
     
     signal = 0
-    
-    # BUY (Aggressive - No Trend Check)
-    if (engulf == 100) or (hammer == 100):
-        signal = 1
-            
-    # SELL (Aggressive - No Trend Check)
-    if (engulf == -100) or (star == -100) or (hanging == -100):
-        # Conflict check: If we have both signals, prioritize Sell or Neutral
-        signal = -1 if signal != 1 else 0
+    if (engulf == 100) or (hammer == 100): signal = 1
+    if (engulf == -100) or (star == -100) or (hanging == -100): signal = -1 if signal != 1 else 0
             
     return signal, curr_atr
 
@@ -152,6 +167,20 @@ def execute_trade(symbol, signal, atr, lot):
     
     log_trade_attempt(symbol, signal, price, sl, tp, lot, status, result.comment, result.order, atr, result.retcode)
     
+    # --- DISCORD ALERT BLOCK ---
+    if result.retcode == mt5.TRADE_RETCODE_DONE:
+        side = "BUY 🟢" if signal == 1 else "SELL 🔴"
+        color = 0x2ecc71 if signal == 1 else 0xe74c3c
+        msg = (f"**Symbol:** {symbol}\n"
+               f"**Side:** {side}\n"
+               f"**Price:** {price:.2f}\n"
+               f"**SL:** {sl:.2f} | **TP:** {tp:.2f}\n"
+               f"**Vol:** {lot} | **ATR:** {atr:.2f}")
+        send_discord_alert(f"🚀 New Trade Executed", msg, color)
+    else:
+        send_discord_alert("❌ Trade Failed", f"Code: {result.retcode}\n{result.comment}", 0xe67e22)
+    # ---------------------------
+
     if result.retcode != mt5.TRADE_RETCODE_DONE:
         print(f"❌ Order Failed: {result.comment} (Code: {result.retcode})")
         return False
@@ -183,6 +212,8 @@ def close_position(position, reason="Time Stop"):
 
     if result.retcode == mt5.TRADE_RETCODE_DONE:
         print(f"⏳ Trade Closed ({reason}) | Ticket: {position.ticket}")
+        # --- DISCORD EXIT ALERT ---
+        send_discord_alert("🏁 Position Closed", f"**Ticket:** {position.ticket}\n**Reason:** {reason}\n**Close Price:** {price}", 0x3498db)
 
 def check_time_stops():
     positions = mt5.positions_get(symbol=SYMBOL, magic=MAGIC_NUMBER)
@@ -215,12 +246,10 @@ def manage_trailing_stops():
             
             if pos.type == mt5.ORDER_TYPE_BUY:
                 proposed = current_price - initial_risk
-                if proposed > pos.sl:
-                    new_sl, update = proposed, True
+                if proposed > pos.sl: new_sl, update = proposed, True
             else:
                 proposed = current_price + initial_risk
-                if proposed < pos.sl:
-                    new_sl, update = proposed, True
+                if proposed < pos.sl: new_sl, update = proposed, True
             
             if update:
                 req = {
@@ -230,8 +259,11 @@ def manage_trailing_stops():
                     "tp": pos.tp,
                     "magic": MAGIC_NUMBER
                 }
-                mt5.order_send(req)
-                print(f"⛓️ Trailing Updated: {pos.ticket}")
+                res = mt5.order_send(req)
+                if res.retcode == mt5.TRADE_RETCODE_DONE:
+                    print(f"⛓️ Trailing Updated: {pos.ticket}")
+                    # Optional: Uncomment if you want spam for every trail update
+                    # send_discord_alert("⛓️ Trailing Stop Moved", f"Ticket: {pos.ticket}\nNew SL: {new_sl}", 0x95a5a6)
 
 def check_history_for_losses():
     global consecutive_losses
@@ -268,7 +300,6 @@ if __name__ == "__main__":
                         if datetime.now() < cooldown_until:
                             print(f"❄️ Cooldown Active. (Losses: {consecutive_losses})")
                         else:
-                            # Use 100 candles (simpler calc)
                             df = get_closed_candles(SYMBOL, TIMEFRAME, n=100)
                             sig, atr = check_for_signal(df)
                             
@@ -278,6 +309,7 @@ if __name__ == "__main__":
                                 
                                 if consecutive_losses >= MAX_CONSECUTIVE_LOSSES:
                                     print("🛑 Max Losses Hit. Cooling Down.")
+                                    send_discord_alert("❄️ Risk Cooldown Activated", f"Max consecutive losses ({consecutive_losses}) reached.\nPausing for {COOLDOWN_BARS} bars.", 0xe74c3c) # <--- ALERT
                                     cooldown_until = datetime.now() + timedelta(minutes=5 * COOLDOWN_BARS)
                                 else:
                                     execute_trade(SYMBOL, sig, atr, LOT_SIZE)
@@ -289,6 +321,7 @@ if __name__ == "__main__":
                 time.sleep(5)
                 
             except KeyboardInterrupt:
+                send_discord_alert("🛑 Bot Stopped", "Manual shutdown detected.", 0x95a5a6) # <--- ALERT
                 mt5.shutdown()
                 break
             except Exception as e:

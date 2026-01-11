@@ -13,21 +13,22 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # --- CONFIGURATION & PAGE SETUP ---
-st.set_page_config(page_title="MT5 Base Dashboard", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="MT5 Dashboard: Top Patterns & RSI", layout="wide", initial_sidebar_state="expanded")
 
-st.title("⚡ MT5 Base Dashboard: Fixed Lot & Trailing")
+st.title("⚡ MT5 Dashboard: Top 5 Patterns + RSI & Sessions")
 st.markdown("""
-**Objective:** Backtest the core strategy (Patterns + Volatility + Trailing).
+**Strategy:** Top Performing Patterns + Volatility + Session + RSI Filter.
 **Logic:**
-1.  **Entry:** Pattern (Engulfing/Hammer) + High Volatility.
-2.  **Sizing:** Fixed Lot Size (Standard).
-3.  **Exit:** 1:2 Risk/Reward with Dynamic Trailing.
+1.  **Entry:** Top 5 Patterns (Spinning Top, Rickshaw, Harami, Dojis) + High Volatility.
+2.  **Filter 1 (Session):** Only trade during specific active hours.
+3.  **Filter 2 (RSI):** Prevent Buying if Overbought (>70) / Prevent Selling if Oversold (<30).
+4.  **Exit:** 1:2 Risk/Reward with Dynamic Trailing.
 """)
 
 # --- SIDEBAR: DATA CONTROLS ---
 st.sidebar.header("🔌 Connection & Settings")
 
-with st.sidebar.expander("MetaTrader 5 Credentials", expanded=True):
+with st.sidebar.expander("MetaTrader 5 Credentials", expanded=False):
     env_login = os.getenv("MT5_LOGIN")
     default_login = int(env_login) if env_login else 0
     default_pass = os.getenv("MT5_PASSWORD", "")
@@ -48,14 +49,32 @@ timeframe_map = {
     "4 Hours (H4)": mt5.TIMEFRAME_H4,
     "Daily (D1)": mt5.TIMEFRAME_D1
 }
-selected_tf_label = st.sidebar.selectbox("Timeframe", list(timeframe_map.keys()), index=1)
+selected_tf_label = st.sidebar.selectbox("Timeframe", list(timeframe_map.keys()), index=2)
 selected_tf_mt5 = timeframe_map[selected_tf_label]
 
 candles_to_fetch = st.sidebar.slider("Number of Candles", 1000, 10000, 5000)
 
 st.sidebar.markdown("---")
+st.sidebar.header("🌊 RSI Filter")
+use_rsi = st.sidebar.checkbox("Use RSI Filter", value=True)
+rsi_period = st.sidebar.number_input("RSI Period", value=14)
+rsi_overbought = st.sidebar.slider("Overbought (Max Buy Level)", 50, 95, 70, help="Don't Buy if RSI is above this.")
+rsi_oversold = st.sidebar.slider("Oversold (Min Sell Level)", 5, 50, 30, help="Don't Sell if RSI is below this.")
+
+st.sidebar.markdown("---")
+st.sidebar.header("🌍 Session Filters (Server Time)")
+use_asian = st.sidebar.checkbox("Asian Session", value=True)
+asian_range = st.sidebar.slider("Asian Hours", 0, 23, (0, 8), disabled=not use_asian)
+
+use_london = st.sidebar.checkbox("London Session", value=True)
+london_range = st.sidebar.slider("London Hours", 0, 23, (8, 16), disabled=not use_london)
+
+use_ny = st.sidebar.checkbox("New York Session", value=True)
+ny_range = st.sidebar.slider("NY Hours", 0, 23, (13, 22), disabled=not use_ny)
+
+st.sidebar.markdown("---")
 st.sidebar.header("💰 Position Sizing")
-trade_lot_size = st.sidebar.number_input("Lot Size (Standard)", min_value=0.01, value=1.0, step=0.01, help="Fixed volume per trade.")
+trade_lot_size = st.sidebar.number_input("Lot Size (Standard)", min_value=0.01, value=1.0, step=0.01)
 initial_capital = st.sidebar.number_input("Start Balance ($)", value=100000.0, step=1000.0)
 
 st.sidebar.subheader("🎯 Target & Trail")
@@ -76,11 +95,19 @@ st.sidebar.header("⚔️ Signal Filters")
 atr_period = st.sidebar.number_input("ATR Period", value=14)
 vol_threshold_ma = st.sidebar.slider("Volatility Threshold (ATR MA)", 20, 200, 50)
 
-# Pattern Selectors
-show_engulfing = st.sidebar.checkbox("Engulfing", value=True)
-show_hammer = st.sidebar.checkbox("Hammer (Bull)", value=True)
-show_star = st.sidebar.checkbox("Shooting Star (Bear)", value=True)
-show_hanging = st.sidebar.checkbox("Hanging Man (Bear)", value=True)
+st.sidebar.subheader("✨ Top 5 Patterns (Data-Backed)")
+# Top 5 Patterns from your CSV
+show_spinning = st.sidebar.checkbox("Spinning Top (#1)", value=True)
+show_rickshaw = st.sidebar.checkbox("Rickshaw Man (#2)", value=True)
+show_harami   = st.sidebar.checkbox("Harami (#3)", value=True)
+show_longdoji = st.sidebar.checkbox("Long Legged Doji (#4)", value=True)
+show_doji     = st.sidebar.checkbox("Doji (#5)", value=True)
+
+st.sidebar.subheader("Standard Patterns")
+show_engulfing = st.sidebar.checkbox("Engulfing", value=False)
+show_hammer    = st.sidebar.checkbox("Hammer (Bull)", value=False)
+show_star      = st.sidebar.checkbox("Shooting Star (Bear)", value=False)
+show_hanging   = st.sidebar.checkbox("Hanging Man (Bear)", value=False)
 
 live_mode = st.sidebar.checkbox("🔴 Enable Live Refresh (10s)", value=False)
 
@@ -95,7 +122,6 @@ def get_mt5_data(login, password, server, symbol, timeframe, num_candles):
         mt5.shutdown()
         return None, None, f"MT5 Login Failed: {err}"
     
-    # FETCH SYMBOL INFO (Important for Contract Size)
     sym_info = mt5.symbol_info(symbol)
     if sym_info is None:
         mt5.shutdown()
@@ -114,17 +140,21 @@ def get_mt5_data(login, password, server, symbol, timeframe, num_candles):
     df.set_index('time', inplace=True)
     return df, contract_size, "Success"
 
-def identify_patterns_talib(df, atr_period=14, vol_ma=50):
+def identify_patterns_talib(df, atr_period=14, vol_ma=50, rsi_period=14):
     hi = df['high'].values
     lo = df['low'].values
     cl = df['close'].values
     op = df['open'].values
     
+    # 1. ATR & Volatility
     df['ATR'] = talib.ATR(hi, lo, cl, timeperiod=atr_period)
     df['ATR_MA'] = df['ATR'].rolling(window=vol_ma).mean()
-    # Simple High Volatility Check (No "Smart" decline logic yet)
     df['High_Vol'] = df['ATR'] > df['ATR_MA']
+    
+    # 2. RSI Calculation
+    df['RSI'] = talib.RSI(cl, timeperiod=rsi_period)
 
+    # 3. Standard Patterns
     engulf = talib.CDLENGULFING(op, hi, lo, cl)
     df['Engulf_Bull'] = engulf == 100
     df['Engulf_Bear'] = engulf == -100
@@ -132,16 +162,46 @@ def identify_patterns_talib(df, atr_period=14, vol_ma=50):
     df['ShootingStar'] = talib.CDLSHOOTINGSTAR(op, hi, lo, cl) == -100
     df['HangingMan'] = talib.CDLHANGINGMAN(op, hi, lo, cl) == -100
 
+    # 4. Top 5 Performing Patterns
+    # Returns 100 (Bullish) or -100 (Bearish)
+    df['SpinningTop']    = talib.CDLSPINNINGTOP(op, hi, lo, cl)
+    df['RickshawMan']    = talib.CDLRICKSHAWMAN(op, hi, lo, cl)
+    df['Harami']         = talib.CDLHARAMI(op, hi, lo, cl)
+    df['LongLeggedDoji'] = talib.CDLLONGLEGGEDDOJI(op, hi, lo, cl)
+    df['Doji']           = talib.CDLDOJI(op, hi, lo, cl)
+
     return df
 
-def run_fixed_lot_backtest(df, contract_size, lot_size, start_bal, sl_mult, tp_mult, max_bars, patterns_active, max_losses, do_cooldown, cooldown_len, do_trail, trail_pct):
-    """
-    Backtest using Fixed Lot PnL Calculation.
-    """
-    # 1. Signals
+def is_in_session(timestamp, sessions_config):
+    hour = timestamp.hour
+    
+    if sessions_config['Asian'][0]:
+        start, end = sessions_config['Asian'][1]
+        if start < end:
+            if start <= hour < end: return True, "Asian"
+        else: 
+            if hour >= start or hour < end: return True, "Asian"
+            
+    if sessions_config['London'][0]:
+        start, end = sessions_config['London'][1]
+        if start <= hour < end: return True, "London"
+        
+    if sessions_config['NY'][0]:
+        start, end = sessions_config['NY'][1]
+        if start <= hour < end: return True, "NY"
+        
+    return False, None
+
+def run_fixed_lot_backtest(df, contract_size, lot_size, start_bal, sl_mult, tp_mult, max_bars, 
+                           patterns_active, max_losses, do_cooldown, cooldown_len, 
+                           do_trail, trail_pct, sessions_config,
+                           use_rsi_filter, rsi_max, rsi_min):
+    
+    # 1. Base Signal Mask
     buy_mask = pd.Series(False, index=df.index)
     sell_mask = pd.Series(False, index=df.index)
     
+    # -- Standard --
     if patterns_active['Engulfing']:
         buy_mask |= df['Engulf_Bull']
         sell_mask |= df['Engulf_Bear']
@@ -152,8 +212,34 @@ def run_fixed_lot_backtest(df, contract_size, lot_size, start_bal, sl_mult, tp_m
     if patterns_active['HangingMan']:
         sell_mask |= df['HangingMan']
         
+    # -- Top 5 Performers --
+    # Note: For these patterns, 100 is Bullish, -100 is Bearish
+    if patterns_active['SpinningTop']:
+        buy_mask  |= (df['SpinningTop'] == 100)
+        sell_mask |= (df['SpinningTop'] == -100)
+    if patterns_active['RickshawMan']:
+        buy_mask  |= (df['RickshawMan'] == 100)
+        sell_mask |= (df['RickshawMan'] == -100)
+    if patterns_active['Harami']:
+        buy_mask  |= (df['Harami'] == 100)
+        sell_mask |= (df['Harami'] == -100)
+    if patterns_active['LongLeggedDoji']:
+        buy_mask  |= (df['LongLeggedDoji'] == 100)
+        sell_mask |= (df['LongLeggedDoji'] == -100)
+    if patterns_active['Doji']:
+        buy_mask  |= (df['Doji'] == 100)
+        sell_mask |= (df['Doji'] == -100)
+
+    # Volatility Filter
     buy_mask &= df['High_Vol']
     sell_mask &= df['High_Vol']
+    
+    # RSI Filter
+    if use_rsi_filter:
+        # Don't BUY if RSI is Overbought (Too high)
+        buy_mask &= (df['RSI'] < rsi_max)
+        # Don't SELL if RSI is Oversold (Too low)
+        sell_mask &= (df['RSI'] > rsi_min)
     
     potential_signals = pd.DataFrame(index=df.index)
     potential_signals['Signal'] = 0
@@ -161,12 +247,11 @@ def run_fixed_lot_backtest(df, contract_size, lot_size, start_bal, sl_mult, tp_m
     potential_signals.loc[sell_mask, 'Signal'] = -1
     potential_signals.loc[buy_mask & sell_mask, 'Signal'] = 0 
     
-    # 2. Iterate
+    # 2. Iteration (Trades)
     trades_log = []
     consecutive_loss_count = 0
     circuit_breaker_active_until = -1
     
-    # Arrays
     opens = df['open'].values
     highs = df['high'].values
     lows = df['low'].values
@@ -178,19 +263,21 @@ def run_fixed_lot_backtest(df, contract_size, lot_size, start_bal, sl_mult, tp_m
     n_rows = len(df)
     
     for i in range(n_rows - max_bars - 1):
-        
         if i < circuit_breaker_active_until: continue
         sig = signals[i]
         if sig == 0: continue
             
-        # SETUP TRADE
+        # Session Filter
+        valid_session, session_name = is_in_session(times[i], sessions_config)
+        if not valid_session: continue 
+
+        # Setup
         entry_idx = i + 1
         entry_price = opens[entry_idx]
         current_atr = atrs[i]
         
         if np.isnan(current_atr): continue
 
-        # Targets
         sl_dist = sl_mult * current_atr
         tp_dist = tp_mult * current_atr
         
@@ -198,27 +285,27 @@ def run_fixed_lot_backtest(df, contract_size, lot_size, start_bal, sl_mult, tp_m
         tp_price = 0.0
         trail_trigger_price = 0.0
         
-        if sig == 1: # BUY
+        if sig == 1: 
             current_sl = entry_price - sl_dist
             tp_price = entry_price + tp_dist
             trail_trigger_price = entry_price + (tp_dist * trail_pct)
-        else: # SELL
+        else: 
             current_sl = entry_price + sl_dist
             tp_price = entry_price - tp_dist
             trail_trigger_price = entry_price - (tp_dist * trail_pct)
             
-        # SCAN
         exit_price = 0.0
         exit_idx = -1
         exit_reason = "Time"
         
+        # Look forward
         for j in range(entry_idx, entry_idx + max_bars):
             if j >= n_rows: break
             
             c_high = highs[j]
             c_low = lows[j]
             
-            # 1. SL CHECK
+            # SL
             sl_hit = False
             if sig == 1:
                 if c_low <= current_sl: sl_hit = True
@@ -233,7 +320,7 @@ def run_fixed_lot_backtest(df, contract_size, lot_size, start_bal, sl_mult, tp_m
                 elif do_trail and ((sig==1 and current_sl > entry_price) or (sig==-1 and current_sl < entry_price)): exit_reason = "Profit (Trailing)"
                 break
                 
-            # 2. TP CHECK
+            # TP
             tp_hit = False
             if sig == 1:
                 if c_high >= tp_price: tp_hit = True
@@ -246,7 +333,7 @@ def run_fixed_lot_backtest(df, contract_size, lot_size, start_bal, sl_mult, tp_m
                 exit_reason = "TP"
                 break
                 
-            # 3. TRAIL UPDATE
+            # Trail
             if do_trail:
                 if sig == 1: 
                     if c_high >= trail_trigger_price:
@@ -257,15 +344,13 @@ def run_fixed_lot_backtest(df, contract_size, lot_size, start_bal, sl_mult, tp_m
                         potential_sl = c_low + sl_dist
                         if potential_sl < current_sl: current_sl = potential_sl
                             
-        # Time Stop
         if exit_idx == -1:
             exit_idx = min(entry_idx + max_bars - 1, n_rows - 1)
             exit_price = closes[exit_idx]
             exit_reason = "Time"
 
-        # Calc PnL (DOLLAR VALUE)
+        # PnL
         price_diff = exit_price - entry_price
-        # PnL = Diff * Signal * Lot * Contract
         realized_pnl = price_diff * sig * lot_size * contract_size
         
         is_win = realized_pnl > 0
@@ -273,6 +358,8 @@ def run_fixed_lot_backtest(df, contract_size, lot_size, start_bal, sl_mult, tp_m
         trades_log.append({
             'Entry_Time': times[entry_idx],
             'Signal': sig,
+            'Session': session_name,
+            'RSI_Val': round(df['RSI'].iloc[i], 2),
             'Entry_Price': entry_price,
             'Exit_Price': exit_price,
             'PnL': realized_pnl,
@@ -280,7 +367,6 @@ def run_fixed_lot_backtest(df, contract_size, lot_size, start_bal, sl_mult, tp_m
             'Consecutive_Losses': consecutive_loss_count
         })
         
-        # Risk Logic
         if not is_win:
             consecutive_loss_count += 1
             if consecutive_loss_count >= max_losses:
@@ -294,14 +380,11 @@ def run_fixed_lot_backtest(df, contract_size, lot_size, start_bal, sl_mult, tp_m
             
         circuit_breaker_active_until = max(circuit_breaker_active_until, exit_idx)
 
-    # 3. Results
     if not trades_log:
         return None, {}
         
     trades_df = pd.DataFrame(trades_log)
     trades_df.set_index('Entry_Time', inplace=True)
-    
-    # EQUITY CURVE (Sum of PnL)
     trades_df['Equity'] = start_bal + trades_df['PnL'].cumsum()
     
     metrics = {
@@ -317,59 +400,67 @@ def run_fixed_lot_backtest(df, contract_size, lot_size, start_bal, sl_mult, tp_m
     
     return trades_df, metrics
 
-# --- MAIN LOGIC ---
+# --- MAIN ---
 
 if 'data_loaded' not in st.session_state:
     st.session_state['data_loaded'] = False
 
-fetch_needed = st.sidebar.button("🚀 Run Base Strategy", type="primary") or live_mode
+fetch_needed = st.sidebar.button("🚀 Run RSI Strategy", type="primary") or live_mode
 
 if fetch_needed:
-    with st.spinner("Calculating PnL..."):
+    with st.spinner("Processing RSI & Sessions..."):
         df, contract_size, msg = get_mt5_data(mt5_login, mt5_pass, mt5_server, mt5_symbol, selected_tf_mt5, candles_to_fetch)
         
         if df is not None:
-            df = identify_patterns_talib(df, atr_period, vol_threshold_ma)
+            df = identify_patterns_talib(df, atr_period, vol_threshold_ma, rsi_period)
             
             patterns_active = {
                 'Engulfing': show_engulfing, 'Hammer': show_hammer,
-                'ShootingStar': show_star, 'HangingMan': show_hanging
+                'ShootingStar': show_star, 'HangingMan': show_hanging,
+                'SpinningTop': show_spinning, 'RickshawMan': show_rickshaw,
+                'Harami': show_harami, 'LongLeggedDoji': show_longdoji,
+                'Doji': show_doji
+            }
+            
+            sessions_config = {
+                'Asian': (use_asian, asian_range),
+                'London': (use_london, london_range),
+                'NY': (use_ny, ny_range)
             }
             
             trades, metrics = run_fixed_lot_backtest(
                 df, contract_size, trade_lot_size, initial_capital,
                 sl_multiplier, tp_multiplier, max_hold_bars, 
                 patterns_active, max_consecutive_losses, use_cooldown, cooldown_bars,
-                use_trailing, trail_trigger_pct
+                use_trailing, trail_trigger_pct, sessions_config,
+                use_rsi, rsi_overbought, rsi_oversold
             )
             
             if trades is not None:
                 st.subheader(f"💰 PnL Report ({trade_lot_size} Lots on {mt5_symbol})")
-                st.caption(f"Contract Size detected: {contract_size}")
+                st.caption(f"Filters: RSI={use_rsi} (<{rsi_overbought}, >{rsi_oversold}), Asian={use_asian}, London={use_london}, NY={use_ny}")
                 
                 c1, c2, c3, c4 = st.columns(4)
                 c1.metric("Net PnL", f"${metrics['Total PnL']:,.2f}", f"{metrics['Return %']:.2f}%")
                 c2.metric("Final Balance", f"${metrics['Final Equity']:,.2f}")
                 c3.metric("Win Rate", f"{metrics['Win Rate']:.1f}%", f"{metrics['Trades']} Trades")
-                c4.metric("Trail Saves", f"{metrics['Trail Saves']}", "Breakeven/Locked")
+                c4.metric("Trail Saves", f"{metrics['Trail Saves']}", "Locked Profit")
                 
-                # Equity Curve
                 fig = make_subplots(rows=2, cols=1, shared_xaxes=False, row_heights=[0.6, 0.4])
-                fig.add_trace(go.Scatter(x=trades.index, y=trades['Equity'], mode='lines', name='Equity ($)', fill='tozeroy', line=dict(color='#00CC96')), row=1, col=1)
+                fig.add_trace(go.Scatter(x=trades.index, y=trades['Equity'], mode='lines', name='Equity', fill='tozeroy', line=dict(color='#00CC96')), row=1, col=1)
                 
-                # Color code
                 colors = ['green' if r > 0 else 'red' for r in trades['PnL']]
-                fig.add_trace(go.Bar(x=trades.index, y=trades['PnL'], name='PnL ($)', marker_color=colors), row=2, col=1)
+                fig.add_trace(go.Bar(x=trades.index, y=trades['PnL'], name='PnL', marker_color=colors), row=2, col=1)
                 
                 fig.update_layout(height=600, template="plotly_dark", showlegend=False, margin=dict(t=30))
                 st.plotly_chart(fig, use_container_width=True)
                 
-                with st.expander("Detailed Trade Ledger"):
-                    st.dataframe(trades[['Signal', 'Entry_Price', 'Exit_Price', 'Reason', 'PnL', 'Equity']].style.format({
+                with st.expander("Detailed Trade Ledger (Check RSI Column)"):
+                    st.dataframe(trades[['Signal', 'Session', 'RSI_Val', 'Entry_Price', 'Exit_Price', 'Reason', 'PnL', 'Equity']].style.format({
                         'Entry_Price': '{:.2f}', 'Exit_Price': '{:.2f}', 'PnL': '${:,.2f}', 'Equity': '${:,.2f}'
                     }))
             else:
-                st.warning("No trades found.")
+                st.warning("No trades found. RSI filters might be too strict (try 80/20).")
         else:
             st.error(msg)
 
@@ -378,4 +469,4 @@ if fetch_needed:
         st.rerun()
 
 else:
-    st.info("👈 Click 'Run Base Strategy'.")
+    st.info("👈 Set RSI Thresholds & Click 'Run RSI Strategy'.")
