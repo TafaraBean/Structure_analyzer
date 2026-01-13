@@ -8,255 +8,266 @@ import sys
 import webbrowser
 
 # --- CONFIGURATION ---
-# 1. Data Sources (Include 2026)
-CSV_FILES = ["Exness_XAUUSDm_2024.csv", "Exness_XAUUSDm_2025.csv", "Exness_XAUUSDm_2026.csv"]
-CACHE_FILE = "btc_5min_2024_2026.parquet"
-CHUNK_SIZE = 5000000
+# Ensure these match your filenames exactly
+CSV_FILES = ["data/Exness_XAUUSDm_2024.csv", "data/Exness_XAUUSDm_2025.csv", "data/Exness_XAUUSDm_2026.csv"]
+CACHE_FILE = "data/XAU_5min_resampled.parquet"
 
-# 2. Strategy Settings
-TIMEFRAME = "5min"
+# 🏆 STRATEGY SETTINGS
 INITIAL_CAPITAL = 10000
+TIMEFRAME = "5min"
 
-# 🏆 WINNING SETTINGS
 WINNING_PARAMS = {
-    'tp_mult': 1.5,
-    'sl_mult': 2.0,
-    'use_adx': False,
-    'use_rsi': True,
-    'use_vol': False,
-    'use_mfi': False,
-    'rsi_min': 30,
-    'rsi_max': 70
+    'use_rsi': True, 'rsi_min': 30, 'rsi_max': 70,
+    'sl_mult': 2.0, 'tp_mult': 1.5,
+    'be_trigger': 1.0, 'step_mult': 0.2, 'max_hold': 80
 }
 
 TARGET_PORTFOLIO = [
-    'CDLLONGLEGGEDDOJI', 
-    'CDLRICKSHAWMAN', 
-    'CDLHIGHWAVE', 
-    'CDLENGULFING', 
-    'CDLBELTHOLD'
+    'CDLLONGLEGGEDDOJI', 'CDLRICKSHAWMAN', 'CDLHIGHWAVE', 
+    'CDLENGULFING', 'CDLBELTHOLD'
 ]
 
 # ==========================================
-# PART 1: DATA FOUNDRY (Builder)
+# PART 1: TICK-TO-CANDLE CONVERTER
 # ==========================================
-def build_dataset():
-    if os.path.exists(CACHE_FILE):
-        print(f"✅ Found existing 5-min dataset: {CACHE_FILE}")
-        return True
-
-    print(f"[*] Building 5-Minute Dataset (2024-2026)...")
-    all_candles = []
+def build_data_cache():
+    print(f"[*] Building Data Cache from TICK DATA...")
     
-    for f in CSV_FILES:
-        if not os.path.exists(f): 
-            print(f"⚠️ Warning: {f} not found.")
-            continue
-            
-        print(f"   -> Processing {f}...")
+    if not os.path.exists("data"): os.makedirs("data")
+
+    df_list = []
+    csvs_found = [f for f in CSV_FILES if os.path.exists(f)]
+    
+    if not csvs_found:
+        sys.exit("❌ No CSV files found. Please check paths in CSV_FILES.")
+
+    for f in csvs_found:
+        print(f"    -> Processing {f} (This may take a moment)...")
         try:
-            # Read Raw Ticks/M1 Data
-            chunk_iterator = pd.read_csv(
-                f, 
-                chunksize=CHUNK_SIZE, 
-                header=0, 
-                usecols=[2, 3], 
-                names=['time', 'bid'], 
-                quotechar='"'
-            )
+            # 1. Read Tick Data (Tab separated usually, or comma)
+            # We explicitly name columns based on your provided format
+            # Format: Exness | Symbol | Timestamp | Bid | Ask
+            # We assume it has a header. If not, add 'header=None'. 
+            # Based on your snippet, it seems to have a header.
+            temp = pd.read_csv(f, sep=None, engine='python')
             
-            for i, chunk in enumerate(chunk_iterator):
-                chunk['time'] = pd.to_datetime(chunk['time'], format='ISO8601', errors='coerce')
-                chunk.dropna(inplace=True)
-                chunk.set_index('time', inplace=True)
-                
-                # RESAMPLE TO 5 MINUTES DIRECTLY
-                resampled = chunk['bid'].resample('5min').agg({
-                    'open': 'first', 
-                    'high': 'max', 
-                    'low': 'min', 
-                    'close': 'last', 
-                    'bid': 'count'
-                }).rename(columns={'bid': 'volume'})
-                
-                resampled.dropna(inplace=True)
-                all_candles.append(resampled)
-                print(f"      Processed chunk {i+1}...", end='\r')
-            print("")
+            # Clean column names
+            temp.columns = [c.lower().strip() for c in temp.columns]
+            
+            # 2. Parse Timestamp
+            # Your format: 2026-01-01 23:05:00.141Z
+            temp['timestamp'] = pd.to_datetime(temp['timestamp'])
+            temp.set_index('timestamp', inplace=True)
+            
+            # 3. Resample to M5 Candles
+            # We use 'bid' as the price reference
+            print(f"       Resampling {len(temp)} ticks to 5-min candles...")
+            
+            ohlc = temp['bid'].resample('5min').agg({
+                'open': 'first',
+                'high': 'max',
+                'low': 'min',
+                'close': 'last'
+            })
+            
+            # Remove empty periods (weekends/holidays)
+            ohlc.dropna(inplace=True)
+            df_list.append(ohlc)
+            
         except Exception as e:
-            print(f"❌ Error reading {f}: {e}")
+            print(f"    ⚠️ Error reading {f}: {e}")
 
-    if not all_candles:
-        print("❌ No data processed.")
-        return False
+    if not df_list:
+        sys.exit("❌ Failed to load any data.")
 
-    print("[*] Merging and Saving...")
-    full_df = pd.concat(all_candles)
+    # Merge all years
+    df = pd.concat(df_list).sort_index()
     
-    # Final Groupby to handle overlapping chunks and ensure 5min integrity
-    full_df = full_df.groupby(full_df.index).agg({
-        'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'
-    })
+    # --- CALCULATE INDICATORS ---
+    print("    -> Calculating Indicators...")
+    c = df['close'].values
+    h = df['high'].values
+    l = df['low'].values
     
-    full_df.sort_index(inplace=True)
-    full_df.to_parquet(CACHE_FILE)
-    print(f"✅ DATA READY: {len(full_df)} 5-min candles saved.")
-    return True
+    df['ATR'] = talib.ATR(h, l, c, timeperiod=14)
+    df['RSI'] = talib.RSI(c, timeperiod=14)
+    
+    df.dropna(inplace=True)
+    df.to_parquet(CACHE_FILE)
+    print(f"✅ Cache Built: {len(df)} candles saved to {CACHE_FILE}")
+    return df
 
 def load_data():
     if not os.path.exists(CACHE_FILE):
-        if not build_dataset():
-            sys.exit()
+        return build_data_cache()
     
-    print("Loading data...")
-    df = pd.read_parquet(CACHE_FILE)
-    
-    # Calculate Indicators needed for Simulation
-    df['ATR'] = talib.ATR(df['high'], df['low'], df['close'], timeperiod=14)
-    df['RSI'] = talib.RSI(df['close'], timeperiod=14)
-    
-    return df.dropna()
+    print(f"[*] Loading cache: {CACHE_FILE}")
+    try:
+        return pd.read_parquet(CACHE_FILE)
+    except:
+        return build_data_cache()
 
 # ==========================================
-# PART 2: SIMULATION ENGINE
+# PART 2: INFINITY RUNNER ENGINE (Unchanged)
 # ==========================================
 def calculate_trades(df):
     strategies = {}
-    closes = df['close'].values
-    atrs = df['ATR'].values
+    opens = df['open'].values
     highs = df['high'].values
     lows = df['low'].values
-    opens = df['open'].values
+    closes = df['close'].values
+    atrs = df['ATR'].values
+    times = df.index
     
-    tp_mult = WINNING_PARAMS['tp_mult']
     sl_mult = WINNING_PARAMS['sl_mult']
-    
-    # Limit lookforward to 12 bars (1 hour) for scalping efficiency
-    max_hold = 12 
-    
+    tp_mult = WINNING_PARAMS['tp_mult']
+    be_trigger = WINNING_PARAMS['be_trigger']
+    step_mult = WINNING_PARAMS['step_mult']
+    max_hold = WINNING_PARAMS['max_hold']
+    n_candles = len(closes)
+
     for pat in TARGET_PORTFOLIO:
         if not hasattr(talib, pat): continue
-        
+        print(f"Simulating {pat}...")
         func = getattr(talib, pat)
         sigs = func(opens, highs, lows, closes)
         
+        # Filter indices to ensure we have room for lookback and lookforward
         indices = np.where(sigs != 0)[0]
-        # Ensure enough data for lookahead
-        indices = indices[(indices > 50) & (indices < len(df) - max_hold)]
+        indices = indices[(indices > 50) & (indices < n_candles - max_hold)]
         
-        trade_list = []
+        trade_log = [] 
         for idx in indices:
+            entry_price = closes[idx]
+            atr = atrs[idx]
             direction = 1 if sigs[idx] == 100 else -1
-            entry = closes[idx]
-            sl_dist = atrs[idx] * sl_mult
             
-            realized = 0
+            sl_dist = atr * sl_mult
+            tp_dist = atr * tp_mult
+            be_dist = atr * be_trigger
+            step_dist = atr * step_mult
             
             if direction == 1:
-                sl = entry - sl_dist
-                tp = entry + (sl_dist * (tp_mult/sl_mult))
-                for j in range(idx+1, idx+max_hold):
-                    if lows[j] <= sl: realized = -1; break
-                    if highs[j] >= tp: realized = (tp_mult/sl_mult); break
+                current_sl = entry_price - sl_dist
+                current_tp = entry_price + tp_dist
             else:
-                sl = entry + sl_dist
-                tp = entry - (sl_dist * (tp_mult/sl_mult))
-                for j in range(idx+1, idx+max_hold):
-                    if highs[j] >= sl: realized = -1; break
-                    if lows[j] <= tp: realized = (tp_mult/sl_mult); break
-            
-            if realized != 0:
-                trade_list.append((df.index[idx], realized * 100)) # $100 Risk
+                current_sl = entry_price + sl_dist
+                current_tp = entry_price - tp_dist
                 
-        strategies[pat] = trade_list
+            is_runner = False
+            exit_pnl = 0.0
+            trade_finished = False # New flag to track completion
+            
+            for i in range(1, max_hold):
+                curr = idx + i
+                c_high = highs[curr]
+                c_low = lows[curr]
+                c_close = closes[curr] # We need close for the Time Stop
+                
+                if direction == 1:
+                    # 1. Check Stop Loss
+                    if c_low <= current_sl:
+                        exit_pnl = current_sl - entry_price
+                        trade_finished = True
+                        break
+                    
+                    # 2. Check Take Profit (if not running yet)
+                    if not is_runner and c_high >= current_tp:
+                        exit_pnl = current_tp - entry_price
+                        trade_finished = True
+                        break
+                    
+                    # 3. Trailing Stop / Break Even Logic
+                    if not is_runner and c_high >= (entry_price + be_dist):
+                        is_runner = True; current_sl = entry_price; current_tp = 99999999
+                    if is_runner:
+                        steps = int((c_high - entry_price) / step_dist)
+                        if steps >= 1:
+                            new_sl = entry_price + (steps * step_dist) - step_dist
+                            if new_sl > current_sl: current_sl = new_sl
+                            
+                else: # Short Direction
+                    # 1. Check Stop Loss
+                    if c_high >= current_sl:
+                        exit_pnl = entry_price - current_sl
+                        trade_finished = True
+                        break
+                    
+                    # 2. Check Take Profit
+                    if not is_runner and c_low <= current_tp:
+                        exit_pnl = entry_price - current_tp
+                        trade_finished = True
+                        break
+                    
+                    # 3. Trailing Stop / Break Even Logic
+                    if not is_runner and c_low <= (entry_price - be_dist):
+                        is_runner = True; current_sl = entry_price; current_tp = -99999999
+                    if is_runner:
+                        steps = int((entry_price - c_low) / step_dist)
+                        if steps >= 1:
+                            new_sl = entry_price - (steps * step_dist) + step_dist
+                            if new_sl < current_sl: current_sl = new_sl
+
+                # 4. TIME STOP (Force Exit at end of Max Hold)
+                # If we are at the last candle and haven't hit SL/TP yet
+                if i == (max_hold - 1):
+                    if direction == 1:
+                        exit_pnl = c_close - entry_price
+                    else:
+                        exit_pnl = entry_price - c_close
+                    trade_finished = True
+
+            # Record trade if it finished (Even if PnL is 0.0, we record it now)
+            if trade_finished:
+                r_multiple = exit_pnl / sl_dist if sl_dist != 0 else 0
+                trade_log.append((times[idx], r_multiple * 100)) 
+
+        strategies[pat] = trade_log
     return strategies
 
 # ==========================================
-# PART 3: MAIN & VISUALIZATION
+# PART 3: VISUALIZATION
 # ==========================================
 if __name__ == "__main__":
     df = load_data()
-    
-    print(f"Dataset Range: {df.index[0]} to {df.index[-1]}")
-    
-    # 1. Calculate Raw Trades
-    print("Simulating trades...")
+    print("\n-------------------------------------------")
+    print(" ♾️ INFINITY RUNNER BACKTEST (From Tick Data)")
+    print("-------------------------------------------\n")
+
     raw_strategies = calculate_trades(df)
     
-    # 2. Apply Regime Filters (No Lookahead)
-    print("Applying filters...")
     mask = pd.Series(True, index=df.index)
-    
     if WINNING_PARAMS['use_rsi']:
         mask &= (df['RSI'] >= WINNING_PARAMS['rsi_min']) & (df['RSI'] <= WINNING_PARAMS['rsi_max'])
-    
-    # Shift mask to ensure we filter based on PREVIOUS candle
     valid_entries = mask.shift(1).fillna(False)
     
-    # 3. Build Equity Curve
     equity_series = pd.Series(0.0, index=df.index)
     total_trades = 0
-    
     for pat, trades in raw_strategies.items():
         for entry_time, pnl in trades:
             if valid_entries.loc[entry_time]:
-                equity_series.loc[entry_time] += pnl
+                equity_series.loc[entry_time] += pnl 
                 total_trades += 1
                 
-    # Cumulative Sum
     equity_curve = equity_series.cumsum() + INITIAL_CAPITAL
     
-    # 4. Calculate Drawdown
     peak = equity_curve.cummax()
     drawdown = (equity_curve - peak)
-    
-    # 5. Plotting
-    print("Generating chart...")
-    fig = make_subplots(
-        rows=3, cols=1, 
-        shared_xaxes=True, 
-        vertical_spacing=0.03,
-        row_heights=[0.5, 0.25, 0.25],
-        subplot_titles=("Total Equity (2024-2026)", "Drawdown ($)", "RSI Context")
-    )
-    
-    # Top: Equity
-    fig.add_trace(go.Scatter(
-        x=equity_curve.index, y=equity_curve, 
-        mode='lines', name='Equity',
-        line=dict(color='#00ff00', width=2),
-        fill='tozeroy', fillcolor='rgba(0, 255, 0, 0.05)'
-    ), row=1, col=1)
-    
-    # Middle: Drawdown
-    fig.add_trace(go.Scatter(
-        x=drawdown.index, y=drawdown, 
-        mode='lines', name='Drawdown',
-        line=dict(color='#ff0000', width=1),
-        fill='tozeroy', fillcolor='rgba(255, 0, 0, 0.2)'
-    ), row=2, col=1)
-    
-    # Bottom: RSI
-    fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], line=dict(color='orange', width=1), name='RSI'), row=3, col=1)
-    if WINNING_PARAMS['use_rsi']:
-        fig.add_hrect(
-            y0=WINNING_PARAMS['rsi_min'], y1=WINNING_PARAMS['rsi_max'], 
-            row=3, col=1, fillcolor="green", opacity=0.1, line_width=0,
-            annotation_text="Trading Zone"
-        )
-    
-    # Layout
     final_eq = equity_curve.iloc[-1]
     ret_pct = ((final_eq - INITIAL_CAPITAL) / INITIAL_CAPITAL) * 100
     
-    fig.update_layout(
-        title=f"🚀 Strategy Performance (2024-2026): +{ret_pct:.1f}% Return | {total_trades} Trades",
-        template="plotly_dark",
-        height=900,
-        hovermode="x unified"
-    )
+    print(f"💰 Final Equity: ${final_eq:,.2f}")
+    print(f"📈 Total Return: {ret_pct:.2f}%")
+    print(f"🔢 Total Trades: {total_trades}")
     
-    filename = "equity_report_2026.html"
+    fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.5, 0.25, 0.25])
+    fig.add_trace(go.Scatter(x=equity_curve.index, y=equity_curve, mode='lines', name='Equity', line=dict(color='#00ff00')), row=1, col=1)
+    fig.add_trace(go.Scatter(x=drawdown.index, y=drawdown, mode='lines', name='Drawdown', line=dict(color='#ff0000'), fill='tozeroy'), row=2, col=1)
+    fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], line=dict(color='orange'), name='RSI'), row=3, col=1)
+    fig.add_hrect(y0=30, y1=70, row=3, col=1, fillcolor="green", opacity=0.1, line_width=0)
+    fig.update_layout(title="Strategy Performance: Tick-Resampled Data", template="plotly_dark", height=900)
+    
+    filename = "infinity_runner_ticks_report.html"
     fig.write_html(filename)
-    print(f"Done! Opening {filename}...")
+    print(f"\n✅ Report generated: {filename}")
     webbrowser.open(filename)
