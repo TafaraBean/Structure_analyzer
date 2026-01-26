@@ -1,0 +1,803 @@
+{
+  "best_params": {
+    "iteration": 41,
+    "strategy": "mean_reversion",
+    "params": {
+      "bb_period": 10,
+      "bb_std": 1.5,
+      "rsi_period": 7,
+      "rsi_oversold": 35,
+      "rsi_overbought": 75
+    },
+    "tp_pips": 5,
+    "sl_pips": 3,
+    "total_trades": 224,
+    "sharpe_per_trade": 0.2055620860658255,
+    "win_rate": 0.47767857142857145,
+    "avg_pnl": 0.00821428571428481,
+    "total_pnl": 1.8399999999997974,
+    "std_pnl": 0.039960120426363134
+  },
+  "best_sharpe": 0.2055620860658255,
+  "all_results": [
+    {
+      "iteration": 1,
+      "strategy": "mean_reversion",
+      "params": {
+        "bb_period": 10,
+        "bb_std": 1.5,
+        "rsi_period": 7,
+        "rsi_oversold": 25,
+        "rsi_overbought": 65
+      },
+      "tp_pips": 5,
+      "sl_pips": 3,
+      "total_trades": 234,
+      "sharpe_per_trade": 0.08024086135591103,
+      "win_rate": 0.41452991452991456,
+      "avg_pnl": 0.003162393162392814,
+      "total_pnl": 0.7399999999999185,
+      "std_pnl": 0.03941125642166169
+    },
+    {
+      "iteration": 2,
+      "strategy": "mean_reversion",
+      "params": {
+        "bb_period": 10,
+        "bb_std": 1.5,
+        "rsi_period": 7,
+        "rsi_oversold": 25,
+        "rsi_overbought": 65
+      },
+      "tp_pips": 8,
+      "sl_pips": 5,
+      "total_trades": 118,
+      "sharpe_per_trade": 0.09606319312346055,
+      "win_rate": 0.4322033898305085,
+      "avg_pnl": 0.00618644067796542,
+      "total_pnl": 0.7299999999999196,
+      "std_pnl": 0.06439969854025775
+    },
+    {
+      "iteration": 3,
+      "strategy": "mean_reversion",
+      "params": {
+        "bb_period": 10,
+        "bb_std": 1.5,
+        "rsi_period": 7,
+        "rsi_oversold": 25,
+        "rsi_overbought": 65
+      },
+      "tp_pips": 10,
+      "sl_pips": 5,
+      "total_trades": 90,
+      "sharpe_per_trade": 0.09166984970282115,
+      "win_rate": 0.37777777777777777,
+      "avg_pnl": 0.0066666666666659324,
+      "total_pnl": 0.5999999999999339,
+      "std_pnl": 0.07272474743089674
+    },
+    {
+      "iteration": 4,
+      "strategy": "mean_reversion",
+      "params": {
+        "bb_period": 10,
+        "bb_std": 1.5,
+        "rsi_period": 7,
+        "rsi_oversold": 25,
+        "rsi_overbought": 65
+      },
+      "tp_pips": 15,
+      "sl_pips": 8,
+      "total_trades": 43,
+      "sharpe_per_trade": -0.09907232938854645,
+      "win_rate": 0.3023255813953488,
+      "avg_pnl": -0.010465116279061902,
+      "total_pnl": -0.4499999999996618,
+      "std_pnl": 0.10563107119465542
+    },
+    {
+      "iteration": 5,
+      "strategy": "mean_reversion",
+      "params": {
+        "bb_period": 10,
+        "bb_std": 1.5,
+        "rsi_period": 7,
+        "rsi_oversold": 25,
+        "rsi_overbought": 65
+      },
+      "tp_pips": 20,
+      "sl_pips": 10,
+      "total_trades": 28,
+      "sharpe_per_trade": -0.025490637096676254,
+      "win_rate": 0.32142857142857145,
+      "avg_pnl": -0.003571428571421041,
+      "total_pnl": -0.09999999999978915,
+      "std_pnl": 0.14010746604237376
+    },
+    {
+      "iteration": 6,
+      "strategy": "mean_reversion",
+      "params": {
+        "bb_period": 10,
+        "bb_std": 1.5,
+        "rsi_period": 7,
+        "rsi_oversold": 25,
+        "rsi_overbought": 70
+      },
+      "tp_pips": 5,
+      "sl_pips": 3,
+      "total_trades": 218,
+      "sharpe_per_trade": 0.14076390016625176,
+      "win_rate": 0.44495412844036697,
+      "avg_pnl": 0.005596330275228742,
+      "total_pnl": 1.2199999999998656,
+      "std_pnl": 0.03975685718155787
+    },
+    {
+      "iteration": 7,
+      "strategy": "mean_reversion",
+      "params": {
+        "bb_period": 10,
+        "bb_std": 1.5,
+        "rsi_period": 7,
+        "rsi_oversold": 25,
+        "rsi_overbought": 70
+      },
+      "tp_pips": 8,
+      "sl_pips": 5,
+      "total_trades": 119,
+      "sharpe_per_trade": 0.13892706702301583,
+      "win_rate": 0.453781512605042,
+      "avg_pnl": 0.008991596638654472,
+      "total_pnl": 1.0699999999998822,
+      "std_pnl": 0.06472170493000366
+    },
+    {
+      "iteration": 8,
+      "strategy": "mean_reversion",
+      "params": {
+        "bb_period": 10,
+        "bb_std": 1.5,
+        "rsi_period": 7,
+        "rsi_oversold": 25,
+        "rsi_overbought": 70
+      },
+      "tp_pips": 10,
+      "sl_pips": 5,
+      "total_trades": 91,
+      "sharpe_per_trade": 0.06095337611766593,
+      "win_rate": 0.3626373626373626,
+      "avg_pnl": 0.004395604395603912,
+      "total_pnl": 0.39999999999995595,
+      "std_pnl": 0.07211420721173059
+    },
+    {
+      "iteration": 9,
+      "strategy": "mean_reversion",
+      "params": {
+        "bb_period": 10,
+        "bb_std": 1.5,
+        "rsi_period": 7,
+        "rsi_oversold": 25,
+        "rsi_overbought": 70
+      },
+      "tp_pips": 15,
+      "sl_pips": 8,
+      "total_trades": 46,
+      "sharpe_per_trade": -0.14484136487550572,
+      "win_rate": 0.2826086956521739,
+      "avg_pnl": -0.014999999999992073,
+      "total_pnl": -0.6899999999996353,
+      "std_pnl": 0.10356157588603848
+    },
+    {
+      "iteration": 10,
+      "strategy": "mean_reversion",
+      "params": {
+        "bb_period": 10,
+        "bb_std": 1.5,
+        "rsi_period": 7,
+        "rsi_oversold": 25,
+        "rsi_overbought": 70
+      },
+      "tp_pips": 20,
+      "sl_pips": 10,
+      "total_trades": 27,
+      "sharpe_per_trade": -0.08111071056532725,
+      "win_rate": 0.2962962962962963,
+      "avg_pnl": -0.011111111111103309,
+      "total_pnl": -0.2999999999997893,
+      "std_pnl": 0.13698697784375008
+    },
+    {
+      "iteration": 11,
+      "strategy": "mean_reversion",
+      "params": {
+        "bb_period": 10,
+        "bb_std": 1.5,
+        "rsi_period": 7,
+        "rsi_oversold": 25,
+        "rsi_overbought": 75
+      },
+      "tp_pips": 5,
+      "sl_pips": 3,
+      "total_trades": 192,
+      "sharpe_per_trade": 0.15694120514358612,
+      "win_rate": 0.453125,
+      "avg_pnl": 0.006249999999999312,
+      "total_pnl": 1.1999999999998678,
+      "std_pnl": 0.03982383080518059
+    },
+    {
+      "iteration": 12,
+      "strategy": "mean_reversion",
+      "params": {
+        "bb_period": 10,
+        "bb_std": 1.5,
+        "rsi_period": 7,
+        "rsi_oversold": 25,
+        "rsi_overbought": 75
+      },
+      "tp_pips": 8,
+      "sl_pips": 5,
+      "total_trades": 103,
+      "sharpe_per_trade": 0.16318535560308853,
+      "win_rate": 0.46601941747572817,
+      "avg_pnl": 0.010582524271843495,
+      "total_pnl": 1.08999999999988,
+      "std_pnl": 0.06484971787286534
+    },
+    {
+      "iteration": 13,
+      "strategy": "mean_reversion",
+      "params": {
+        "bb_period": 10,
+        "bb_std": 1.5,
+        "rsi_period": 7,
+        "rsi_oversold": 25,
+        "rsi_overbought": 75
+      },
+      "tp_pips": 10,
+      "sl_pips": 5,
+      "total_trades": 85,
+      "sharpe_per_trade": 0.0410304969931109,
+      "win_rate": 0.35294117647058826,
+      "avg_pnl": 0.0029411764705879113,
+      "total_pnl": 0.24999999999997247,
+      "std_pnl": 0.07168269180560354
+    },
+    {
+      "iteration": 14,
+      "strategy": "mean_reversion",
+      "params": {
+        "bb_period": 10,
+        "bb_std": 1.5,
+        "rsi_period": 7,
+        "rsi_oversold": 25,
+        "rsi_overbought": 75
+      },
+      "tp_pips": 15,
+      "sl_pips": 8,
+      "total_trades": 47,
+      "sharpe_per_trade": -0.10923075513366012,
+      "win_rate": 0.2978723404255319,
+      "avg_pnl": -0.01148936170211978,
+      "total_pnl": -0.5399999999996297,
+      "std_pnl": 0.10518431084780869
+    },
+    {
+      "iteration": 15,
+      "strategy": "mean_reversion",
+      "params": {
+        "bb_period": 10,
+        "bb_std": 1.5,
+        "rsi_period": 7,
+        "rsi_oversold": 25,
+        "rsi_overbought": 75
+      },
+      "tp_pips": 20,
+      "sl_pips": 10,
+      "total_trades": 26,
+      "sharpe_per_trade": -0.055555555555502095,
+      "win_rate": 0.3076923076923077,
+      "avg_pnl": -0.007692307692300013,
+      "total_pnl": -0.19999999999980034,
+      "std_pnl": 0.13846153846153347
+    },
+    {
+      "iteration": 16,
+      "strategy": "mean_reversion",
+      "params": {
+        "bb_period": 10,
+        "bb_std": 1.5,
+        "rsi_period": 7,
+        "rsi_oversold": 30,
+        "rsi_overbought": 65
+      },
+      "tp_pips": 5,
+      "sl_pips": 3,
+      "total_trades": 244,
+      "sharpe_per_trade": 0.08724590280307595,
+      "win_rate": 0.4180327868852459,
+      "avg_pnl": 0.003442622950819293,
+      "total_pnl": 0.8399999999999075,
+      "std_pnl": 0.03945884953004256
+    },
+    {
+      "iteration": 17,
+      "strategy": "mean_reversion",
+      "params": {
+        "bb_period": 10,
+        "bb_std": 1.5,
+        "rsi_period": 7,
+        "rsi_oversold": 30,
+        "rsi_overbought": 65
+      },
+      "tp_pips": 8,
+      "sl_pips": 5,
+      "total_trades": 122,
+      "sharpe_per_trade": 0.10048963269485518,
+      "win_rate": 0.4344262295081967,
+      "avg_pnl": 0.00647540983606486,
+      "total_pnl": 0.789999999999913,
+      "std_pnl": 0.06443858597560966
+    },
+    {
+      "iteration": 18,
+      "strategy": "mean_reversion",
+      "params": {
+        "bb_period": 10,
+        "bb_std": 1.5,
+        "rsi_period": 7,
+        "rsi_oversold": 30,
+        "rsi_overbought": 65
+      },
+      "tp_pips": 10,
+      "sl_pips": 5,
+      "total_trades": 95,
+      "sharpe_per_trade": 0.09402532459726166,
+      "win_rate": 0.37894736842105264,
+      "avg_pnl": 0.006842105263157141,
+      "total_pnl": 0.6499999999999284,
+      "std_pnl": 0.07276874919032618
+    },
+    {
+      "iteration": 19,
+      "strategy": "mean_reversion",
+      "params": {
+        "bb_period": 10,
+        "bb_std": 1.5,
+        "rsi_period": 7,
+        "rsi_oversold": 30,
+        "rsi_overbought": 65
+      },
+      "tp_pips": 15,
+      "sl_pips": 8,
+      "total_trades": 44,
+      "sharpe_per_trade": -0.014592361349484332,
+      "win_rate": 0.3409090909090909,
+      "avg_pnl": -0.001590909090901346,
+      "total_pnl": -0.06999999999965922,
+      "std_pnl": 0.1090234166218455
+    },
+    {
+      "iteration": 20,
+      "strategy": "mean_reversion",
+      "params": {
+        "bb_period": 10,
+        "bb_std": 1.5,
+        "rsi_period": 7,
+        "rsi_oversold": 30,
+        "rsi_overbought": 65
+      },
+      "tp_pips": 20,
+      "sl_pips": 10,
+      "total_trades": 27,
+      "sharpe_per_trade": 5.233641528946107e-14,
+      "win_rate": 0.3333333333333333,
+      "avg_pnl": 7.401486830834377e-15,
+      "total_pnl": 1.9984014443252818e-13,
+      "std_pnl": 0.14142135623730437
+    },
+    {
+      "iteration": 21,
+      "strategy": "mean_reversion",
+      "params": {
+        "bb_period": 10,
+        "bb_std": 1.5,
+        "rsi_period": 7,
+        "rsi_oversold": 30,
+        "rsi_overbought": 70
+      },
+      "tp_pips": 5,
+      "sl_pips": 3,
+      "total_trades": 234,
+      "sharpe_per_trade": 0.1312851435905529,
+      "win_rate": 0.44017094017094016,
+      "avg_pnl": 0.00521367521367464,
+      "total_pnl": 1.2199999999998656,
+      "std_pnl": 0.03971260624838749
+    },
+    {
+      "iteration": 22,
+      "strategy": "mean_reversion",
+      "params": {
+        "bb_period": 10,
+        "bb_std": 1.5,
+        "rsi_period": 7,
+        "rsi_oversold": 30,
+        "rsi_overbought": 70
+      },
+      "tp_pips": 8,
+      "sl_pips": 5,
+      "total_trades": 123,
+      "sharpe_per_trade": 0.10963632637159018,
+      "win_rate": 0.43902439024390244,
+      "avg_pnl": 0.007073170731706538,
+      "total_pnl": 0.8699999999999042,
+      "std_pnl": 0.06451484618094057
+    },
+    {
+      "iteration": 23,
+      "strategy": "mean_reversion",
+      "params": {
+        "bb_period": 10,
+        "bb_std": 1.5,
+        "rsi_period": 7,
+        "rsi_oversold": 30,
+        "rsi_overbought": 70
+      },
+      "tp_pips": 10,
+      "sl_pips": 5,
+      "total_trades": 96,
+      "sharpe_per_trade": 0.04356068418690322,
+      "win_rate": 0.3541666666666667,
+      "avg_pnl": 0.003124999999999656,
+      "total_pnl": 0.29999999999996696,
+      "std_pnl": 0.07173900177029832
+    },
+    {
+      "iteration": 24,
+      "strategy": "mean_reversion",
+      "params": {
+        "bb_period": 10,
+        "bb_std": 1.5,
+        "rsi_period": 7,
+        "rsi_oversold": 30,
+        "rsi_overbought": 70
+      },
+      "tp_pips": 15,
+      "sl_pips": 8,
+      "total_trades": 44,
+      "sharpe_per_trade": -0.014592361349484332,
+      "win_rate": 0.3409090909090909,
+      "avg_pnl": -0.001590909090901346,
+      "total_pnl": -0.06999999999965922,
+      "std_pnl": 0.1090234166218455
+    },
+    {
+      "iteration": 25,
+      "strategy": "mean_reversion",
+      "params": {
+        "bb_period": 10,
+        "bb_std": 1.5,
+        "rsi_period": 7,
+        "rsi_oversold": 30,
+        "rsi_overbought": 70
+      },
+      "tp_pips": 20,
+      "sl_pips": 10,
+      "total_trades": 28,
+      "sharpe_per_trade": -0.025490637096676254,
+      "win_rate": 0.32142857142857145,
+      "avg_pnl": -0.003571428571421041,
+      "total_pnl": -0.09999999999978915,
+      "std_pnl": 0.14010746604237376
+    },
+    {
+      "iteration": 26,
+      "strategy": "mean_reversion",
+      "params": {
+        "bb_period": 10,
+        "bb_std": 1.5,
+        "rsi_period": 7,
+        "rsi_oversold": 30,
+        "rsi_overbought": 75
+      },
+      "tp_pips": 5,
+      "sl_pips": 3,
+      "total_trades": 212,
+      "sharpe_per_trade": 0.19370679241722893,
+      "win_rate": 0.4716981132075472,
+      "avg_pnl": 0.0077358490566029215,
+      "total_pnl": 1.6399999999998194,
+      "std_pnl": 0.039935868846253574
+    },
+    {
+      "iteration": 27,
+      "strategy": "mean_reversion",
+      "params": {
+        "bb_period": 10,
+        "bb_std": 1.5,
+        "rsi_period": 7,
+        "rsi_oversold": 30,
+        "rsi_overbought": 75
+      },
+      "tp_pips": 8,
+      "sl_pips": 5,
+      "total_trades": 111,
+      "sharpe_per_trade": 0.16804064520301615,
+      "win_rate": 0.46846846846846846,
+      "avg_pnl": 0.0109009009008997,
+      "total_pnl": 1.2099999999998667,
+      "std_pnl": 0.06487062036526887
+    },
+    {
+      "iteration": 28,
+      "strategy": "mean_reversion",
+      "params": {
+        "bb_period": 10,
+        "bb_std": 1.5,
+        "rsi_period": 7,
+        "rsi_oversold": 30,
+        "rsi_overbought": 75
+      },
+      "tp_pips": 10,
+      "sl_pips": 5,
+      "total_trades": 90,
+      "sharpe_per_trade": 0.0,
+      "win_rate": 0.3333333333333333,
+      "avg_pnl": 0.0,
+      "total_pnl": 0.0,
+      "std_pnl": 0.07071067811864695
+    },
+    {
+      "iteration": 29,
+      "strategy": "mean_reversion",
+      "params": {
+        "bb_period": 10,
+        "bb_std": 1.5,
+        "rsi_period": 7,
+        "rsi_oversold": 30,
+        "rsi_overbought": 75
+      },
+      "tp_pips": 15,
+      "sl_pips": 8,
+      "total_trades": 44,
+      "sharpe_per_trade": -0.014592361349484332,
+      "win_rate": 0.3409090909090909,
+      "avg_pnl": -0.001590909090901346,
+      "total_pnl": -0.06999999999965922,
+      "std_pnl": 0.1090234166218455
+    },
+    {
+      "iteration": 30,
+      "strategy": "mean_reversion",
+      "params": {
+        "bb_period": 10,
+        "bb_std": 1.5,
+        "rsi_period": 7,
+        "rsi_oversold": 30,
+        "rsi_overbought": 75
+      },
+      "tp_pips": 20,
+      "sl_pips": 10,
+      "total_trades": 27,
+      "sharpe_per_trade": 5.233641528946107e-14,
+      "win_rate": 0.3333333333333333,
+      "avg_pnl": 7.401486830834377e-15,
+      "total_pnl": 1.9984014443252818e-13,
+      "std_pnl": 0.14142135623730437
+    },
+    {
+      "iteration": 31,
+      "strategy": "mean_reversion",
+      "params": {
+        "bb_period": 10,
+        "bb_std": 1.5,
+        "rsi_period": 7,
+        "rsi_oversold": 35,
+        "rsi_overbought": 65
+      },
+      "tp_pips": 5,
+      "sl_pips": 3,
+      "total_trades": 256,
+      "sharpe_per_trade": 0.09491579957524988,
+      "win_rate": 0.421875,
+      "avg_pnl": 0.003749999999999587,
+      "total_pnl": 0.9599999999998943,
+      "std_pnl": 0.039508701573193424
+    },
+    {
+      "iteration": 32,
+      "strategy": "mean_reversion",
+      "params": {
+        "bb_period": 10,
+        "bb_std": 1.5,
+        "rsi_period": 7,
+        "rsi_oversold": 35,
+        "rsi_overbought": 65
+      },
+      "tp_pips": 8,
+      "sl_pips": 5,
+      "total_trades": 119,
+      "sharpe_per_trade": 0.08882311833686551,
+      "win_rate": 0.42857142857142855,
+      "avg_pnl": 0.005714285714285085,
+      "total_pnl": 0.6799999999999251,
+      "std_pnl": 0.06433331570969406
+    },
+    {
+      "iteration": 33,
+      "strategy": "mean_reversion",
+      "params": {
+        "bb_period": 10,
+        "bb_std": 1.5,
+        "rsi_period": 7,
+        "rsi_oversold": 35,
+        "rsi_overbought": 65
+      },
+      "tp_pips": 10,
+      "sl_pips": 5,
+      "total_trades": 95,
+      "sharpe_per_trade": 0.09402532459726166,
+      "win_rate": 0.37894736842105264,
+      "avg_pnl": 0.006842105263157141,
+      "total_pnl": 0.6499999999999284,
+      "std_pnl": 0.07276874919032618
+    },
+    {
+      "iteration": 34,
+      "strategy": "mean_reversion",
+      "params": {
+        "bb_period": 10,
+        "bb_std": 1.5,
+        "rsi_period": 7,
+        "rsi_oversold": 35,
+        "rsi_overbought": 65
+      },
+      "tp_pips": 15,
+      "sl_pips": 8,
+      "total_trades": 45,
+      "sharpe_per_trade": -0.1300335243850262,
+      "win_rate": 0.28888888888888886,
+      "avg_pnl": -0.013555555555547648,
+      "total_pnl": -0.6099999999996442,
+      "std_pnl": 0.10424662116678442
+    },
+    {
+      "iteration": 35,
+      "strategy": "mean_reversion",
+      "params": {
+        "bb_period": 10,
+        "bb_std": 1.5,
+        "rsi_period": 7,
+        "rsi_oversold": 35,
+        "rsi_overbought": 65
+      },
+      "tp_pips": 20,
+      "sl_pips": 10,
+      "total_trades": 27,
+      "sharpe_per_trade": 5.233641528946107e-14,
+      "win_rate": 0.3333333333333333,
+      "avg_pnl": 7.401486830834377e-15,
+      "total_pnl": 1.9984014443252818e-13,
+      "std_pnl": 0.14142135623730437
+    },
+    {
+      "iteration": 36,
+      "strategy": "mean_reversion",
+      "params": {
+        "bb_period": 10,
+        "bb_std": 1.5,
+        "rsi_period": 7,
+        "rsi_oversold": 35,
+        "rsi_overbought": 70
+      },
+      "tp_pips": 5,
+      "sl_pips": 3,
+      "total_trades": 246,
+      "sharpe_per_trade": 0.129011711635535,
+      "win_rate": 0.43902439024390244,
+      "avg_pnl": 0.005121951219511631,
+      "total_pnl": 1.2599999999998612,
+      "std_pnl": 0.039701443803655735
+    },
+    {
+      "iteration": 37,
+      "strategy": "mean_reversion",
+      "params": {
+        "bb_period": 10,
+        "bb_std": 1.5,
+        "rsi_period": 7,
+        "rsi_oversold": 35,
+        "rsi_overbought": 70
+      },
+      "tp_pips": 8,
+      "sl_pips": 5,
+      "total_trades": 120,
+      "sharpe_per_trade": 0.09831371604561491,
+      "win_rate": 0.43333333333333335,
+      "avg_pnl": 0.006333333333332636,
+      "total_pnl": 0.7599999999999163,
+      "std_pnl": 0.06441963123837309
+    },
+    {
+      "iteration": 38,
+      "strategy": "mean_reversion",
+      "params": {
+        "bb_period": 10,
+        "bb_std": 1.5,
+        "rsi_period": 7,
+        "rsi_oversold": 35,
+        "rsi_overbought": 70
+      },
+      "tp_pips": 10,
+      "sl_pips": 5,
+      "total_trades": 96,
+      "sharpe_per_trade": 0.04356068418690322,
+      "win_rate": 0.3541666666666667,
+      "avg_pnl": 0.003124999999999656,
+      "total_pnl": 0.29999999999996696,
+      "std_pnl": 0.07173900177029832
+    },
+    {
+      "iteration": 39,
+      "strategy": "mean_reversion",
+      "params": {
+        "bb_period": 10,
+        "bb_std": 1.5,
+        "rsi_period": 7,
+        "rsi_oversold": 35,
+        "rsi_overbought": 70
+      },
+      "tp_pips": 15,
+      "sl_pips": 8,
+      "total_trades": 45,
+      "sharpe_per_trade": -0.07930688568696284,
+      "win_rate": 0.3111111111111111,
+      "avg_pnl": -0.008444444444436606,
+      "total_pnl": -0.3799999999996473,
+      "std_pnl": 0.10647807401955235
+    },
+    {
+      "iteration": 40,
+      "strategy": "mean_reversion",
+      "params": {
+        "bb_period": 10,
+        "bb_std": 1.5,
+        "rsi_period": 7,
+        "rsi_oversold": 35,
+        "rsi_overbought": 70
+      },
+      "tp_pips": 20,
+      "sl_pips": 10,
+      "total_trades": 28,
+      "sharpe_per_trade": -0.025490637096676254,
+      "win_rate": 0.32142857142857145,
+      "avg_pnl": -0.003571428571421041,
+      "total_pnl": -0.09999999999978915,
+      "std_pnl": 0.14010746604237376
+    },
+    {
+      "iteration": 41,
+      "strategy": "mean_reversion",
+      "params": {
+        "bb_period": 10,
+        "bb_std": 1.5,
+        "rsi_period": 7,
+        "rsi_oversold": 35,
+        "rsi_overbought": 75
+      },
+      "tp_pips": 5,
+      "sl_pips": 3,
+      "total_trades": 224,
+      "sharpe_per_trade": 0.2055620860658255,
+      "win_rate": 0.47767857142857145,
+      "avg_pnl": 0.00821428571428481,
+      "total_pnl": 1.8399999999997974,
+      "std_pnl": 0.039960120426363134
+    }
+  ]
+}

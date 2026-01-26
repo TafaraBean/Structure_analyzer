@@ -7,17 +7,21 @@ import os
 # ==========================================
 # Update these paths to match your actual installation folders!
 BOTS = [
+    # {
+    #     "name": "Standard Account (Single Trade)",
+    #     "script": "gold_bot.py",
+    #     "path": r"C:\Program Files\terminal64.exe",
+    #     "magic": 555999,
+    #     "symbol": "XAUUSDm" 
+    # },
     {
-        "name": "Tafara Account",
-        "path": r"C:\Program Files\terminal64.exe",
-        "magic": 555999,
-        "symbol": "XAUUSDm" # Some brokers use raw symbol
-    },
-    
-    # Add more here...
+        "name": "slow account",
+        "script": "gold_bot_modified.py",
+        "path": r"C:\Program Files\MetaTrader 5-3\terminal64.exe", # <--- UPDATE THIS PATH for 3rd Account
+        "magic": 777111,
+        "symbol": "XAUUSDm"
+    }
 ]
-
-SCRIPT_NAME = "gold_sniper.py" # Ensure this matches your bot filename
 
 # ==========================================
 # 🚀 LAUNCH ENGINE
@@ -34,19 +38,11 @@ if __name__ == "__main__":
         # Verify path exists first
         if not os.path.exists(bot['path']):
             print(f"❌ ERROR: Path not found: {bot['path']}")
+            print("   -> Please check the 'path' in BOTS config inside launcher.py")
             continue
 
-        # OLD CODE:
-        # cmd = [
-        #     "python", SCRIPT_NAME,
-        #     "--path", bot['path'],
-        #     "--magic", str(bot['magic']),
-        #     "--symbol", bot['symbol']
-        # ]
-
-        # NEW CODE:
         cmd = [
-            "cmd", "/k", "python", SCRIPT_NAME,
+            "cmd", "/k", "python", bot['script'],
             "--path", bot['path'],
             "--magic", str(bot['magic']),
             "--symbol", bot['symbol']
