@@ -25,7 +25,7 @@ class SupplyDemandZoneDetector:
     """Detect and label supply/demand zones during sideways regimes."""
     
     def __init__(self, symbol='BTCUSDm', timeframe=mt5.TIMEFRAME_M15, bars=3000,
-                 mtf_timeframes=None):
+                 mtf_timeframes=None, use_validation_time=False):
         self.symbol = symbol
         self.timeframe = timeframe
         self.bars = bars
@@ -34,6 +34,7 @@ class SupplyDemandZoneDetector:
         self.bayesian_detector = None
         self.kde_detector = None
         self.zone_probabilities = {}
+        self.use_validation_time = use_validation_time  # False = lookahead bias (for ML), True = bias-free (for backtesting)
         
         # Multi-timeframe confluence settings
         if mtf_timeframes is None:
@@ -164,15 +165,15 @@ class SupplyDemandZoneDetector:
         """
         Detect supply/demand zones during sideways periods.
         
-        IMPORTANT: Zones are displayed at their VALIDATION time (T+20), not formation time (T).
-        This eliminates lookahead bias - you would only know a zone is valid after the reversal
-        is confirmed, which takes 20 candles.
+        IMPORTANT: By default, uses formation time (lookahead bias) for ML ground truth labels.
+        Set use_validation_time=True in constructor for bias-free backtesting.
         
         Returns list of zones with:
         - type: 'supply' or 'demand'
         - price: zone price level
-        - time: when zone was VALIDATED (confirmed), not when it formed
-        - formation_time: original formation time for reference
+        - time: formation time (default) or validation time (if use_validation_time=True)
+        - formation_time: original formation time (always included)
+        - validation_time: when zone was confirmed (always included)
         - strength: reversal magnitude
         - touches: number of times price tested the zone
         - validated: if zone caused reversal
@@ -203,14 +204,18 @@ class SupplyDemandZoneDetector:
                           (self.df['high'].iloc[idx:idx+50] <= zone_price + price_tolerance)).sum()
                 
                 if touches >= min_touches:
-                    # Use validation time instead of formation time (eliminates lookahead bias)
+                    # Store both formation and validation times
                     validation_time = self.df.index[validation_idx]
+                    
+                    # Use formation time for ML labels (lookahead bias), validation time for backtesting
+                    display_time = validation_time if self.use_validation_time else zone_time
                     
                     zones.append({
                         'type': 'supply',
                         'price': zone_price,
-                        'time': validation_time,  # Time when zone was confirmed, not formed
-                        'formation_time': zone_time,  # Original formation time for reference
+                        'time': display_time,  # Formation time (ML) or validation time (backtesting)
+                        'formation_time': zone_time,  # Always store formation time
+                        'validation_time': validation_time,  # Always store validation time
                         'idx': idx,
                         'validation_idx': validation_idx,
                         'strength': reversal_strength,
@@ -237,14 +242,18 @@ class SupplyDemandZoneDetector:
                           (self.df['low'].iloc[idx:idx+50] <= zone_price + price_tolerance)).sum()
                 
                 if touches >= min_touches:
-                    # Use validation time instead of formation time (eliminates lookahead bias)
+                    # Store both formation and validation times
                     validation_time = self.df.index[validation_idx]
+                    
+                    # Use formation time for ML labels (lookahead bias), validation time for backtesting
+                    display_time = validation_time if self.use_validation_time else zone_time
                     
                     zones.append({
                         'type': 'demand',
                         'price': zone_price,
-                        'time': validation_time,  # Time when zone was confirmed, not formed
-                        'formation_time': zone_time,  # Original formation time for reference
+                        'time': display_time,  # Formation time (ML) or validation time (backtesting)
+                        'formation_time': zone_time,  # Always store formation time
+                        'validation_time': validation_time,  # Always store validation time
                         'idx': idx,
                         'validation_idx': validation_idx,
                         'strength': reversal_strength,
@@ -665,7 +674,7 @@ class SupplyDemandZoneDetector:
         labels['composite_zone_score'] = 0.0
         labels['high_prob_zone'] = 0
         
-        proximity_threshold = 0.002  # 0.2% proximity
+        proximity_threshold = 0.0002  # 0.02% proximity (10x stricter for balanced classes)
         
         for i, row in self.df.iterrows():
             current_price = row['close']
@@ -725,9 +734,13 @@ def main():
     print("="*60)
     print("  SUPPLY/DEMAND ZONE DETECTION")
     print("  Symbol: EURUSDm | Timeframe: M15")
+    print("  Mode: ML Ground Truth (with lookahead bias)")
     print("="*60)
     
-    detector = SupplyDemandZoneDetector('EURUSDm', mt5.TIMEFRAME_M15, bars=3000)
+    # use_validation_time=False (default) = Lookahead bias for ML ground truth labels
+    # use_validation_time=True = Bias-free for realistic backtesting
+    detector = SupplyDemandZoneDetector('EURUSDm', mt5.TIMEFRAME_M15, bars=3000, 
+                                       use_validation_time=False)
     
     if not detector.init_mt5():
         return
@@ -768,14 +781,18 @@ def main():
         print(f"\n{'='*60}")
         print("  SUMMARY")
         print(f"{'='*60}")
-        print(f"\n✅ Zone Detection Complete")
+        print(f"\n✅ Zone Detection Complete (ML Ground Truth Mode)")
         print(f"   Total zones found: {len(zones)}")
         print(f"   Supply zones: {sum(1 for z in zones if z['type'] == 'supply')}")
         print(f"   Demand zones: {sum(1 for z in zones if z['type'] == 'demand')}")
-        print(f"\n📊 Next Steps:")
-        print(f"   1. Review 'supply_demand_zones.png' to validate zones")
-        print(f"   2. Use 'zone_labels_for_ml.csv' to train prediction model")
-        print(f"   3. Train NN to predict: is_near_supply, is_near_demand")
+        print(f"\n📊 Zones use FORMATION time (lookahead bias)")
+        print(f"   Perfect for ML training - NN learns reversal patterns")
+        print(f"   Zones appear at swing points (before confirmation)")
+        print(f"\n💡 For bias-free backtesting:")
+        print(f"   Set use_validation_time=True in constructor")
+        print(f"\n📁 Output Files:")
+        print(f"   - supply_demand_zones_bayesian.csv (zone data)")
+        print(f"   - zone_labels_bayesian_for_ml.csv (ML training labels)")
     else:
         print(f"\n⚠️  No zones detected. Try adjusting parameters:")
         print(f"   - Lower reversal_threshold")
