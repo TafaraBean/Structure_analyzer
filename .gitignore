@@ -127,5 +127,4 @@ venv.bak/
 dmypy.json
 
 # Pyre type checker
-.pyre/</content>
-<parameter name="filePath">c:\Users\tafar\OneDrive\Desktop\Structure_bot\.gitignore
+.pyre/

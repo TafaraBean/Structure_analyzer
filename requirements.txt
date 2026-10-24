@@ -1,0 +1,24 @@
+# Third-party packages imported by the scripts in this repo (unpinned).
+# MetaTrader5 only ships wheels for 64-bit Windows.
+MetaTrader5
+python-dotenv
+numpy
+pandas
+scipy
+scikit-learn
+joblib
+tensorflow
+TA-Lib
+pandas-ta
+numba
+optuna
+backtesting
+matplotlib
+seaborn
+plotly
+streamlit
+yfinance
+PyWavelets
+requests
+# Parquet cache used by optimized.py and adaptive.py
+pyarrow
